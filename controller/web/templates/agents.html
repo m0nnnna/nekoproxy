@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+
+{% block title %}Agents - NekoProxy{% endblock %}
+
+{% block content %}
+<div class="flex justify-between items-center mb-6">
+    <h1 class="text-2xl font-bold text-gray-900">Agents</h1>
+</div>
+
+<div class="bg-white shadow rounded-lg overflow-hidden">
+    <table class="min-w-full divide-y divide-gray-200">
+        <thead class="bg-gray-50">
+            <tr>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">ID</th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Hostname</th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">WireGuard IP</th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Public IP</th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Connections</th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Last Heartbeat</th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
+            </tr>
+        </thead>
+        <tbody class="bg-white divide-y divide-gray-200" id="agents-table">
+            {% for agent in agents %}
+            <tr id="agent-{{ agent.id }}">
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ agent.id }}</td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ agent.hostname }}</td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ agent.wireguard_ip }}</td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ agent.public_ip or '-' }}</td>
+                <td class="px-6 py-4 whitespace-nowrap">
+                    {% if agent.status.value == 'healthy' %}
+                    <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">
+                        Healthy
+                    </span>
+                    {% elif agent.status.value == 'unhealthy' %}
+                    <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-red-100 text-red-800">
+                        Unhealthy
+                    </span>
+                    {% else %}
+                    <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-gray-100 text-gray-800">
+                        Unknown
+                    </span>
+                    {% endif %}
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ agent.active_connections }}</td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    {{ agent.last_heartbeat.strftime('%Y-%m-%d %H:%M:%S') if agent.last_heartbeat else 'Never' }}
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm">
+                    <button hx-delete="/agents/{{ agent.id }}"
+                            hx-target="#agent-{{ agent.id }}"
+                            hx-swap="outerHTML"
+                            hx-confirm="Are you sure you want to remove this agent?"
+                            class="text-red-600 hover:text-red-900">
+                        Remove
+                    </button>
+                </td>
+            </tr>
+            {% else %}
+            <tr>
+                <td colspan="8" class="px-6 py-4 text-center text-sm text-gray-500">
+                    No agents registered. Start an agent to see it here.
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<div class="mt-4 text-sm text-gray-500">
+    Agents register automatically when they start. Agents are marked unhealthy after 90 seconds without a heartbeat.
+</div>
+{% endblock %}

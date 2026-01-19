@@ -1,0 +1,52 @@
+/* Additional custom styles for NekoProxy controller */
+/* Most styling is handled by TailwindCSS CDN */
+
+/* Loading indicator */
+.htmx-indicator {
+    opacity: 0;
+    transition: opacity 200ms ease-in;
+}
+
+.htmx-request .htmx-indicator {
+    opacity: 1;
+}
+
+.htmx-request.htmx-indicator {
+    opacity: 1;
+}
+
+/* Smooth transitions for htmx updates */
+.htmx-settling {
+    opacity: 0.8;
+}
+
+.htmx-swapping {
+    opacity: 0.5;
+    transition: opacity 100ms ease-out;
+}
+
+/* Status indicator pulse animation */
+@keyframes pulse {
+    0%, 100% {
+        opacity: 1;
+    }
+    50% {
+        opacity: 0.5;
+    }
+}
+
+.status-pulse {
+    animation: pulse 2s ease-in-out infinite;
+}
+
+/* Table hover effects */
+tbody tr:hover {
+    background-color: #f9fafb;
+}
+
+/* Form focus styles */
+input:focus, select:focus, textarea:focus {
+    outline: none;
+    ring: 2px;
+    ring-color: #3b82f6;
+}

@@ -1,0 +1,35 @@
+FROM ubuntu:20.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install Python and build dependencies
+RUN apt-get update && apt-get install -y \
+    python3 \
+    python3-pip \
+    python3-venv \
+    python3-dev \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create build directory
+WORKDIR /build
+
+# Copy requirements first for layer caching
+COPY requirements.txt .
+
+# Create venv and install dependencies
+RUN python3 -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+
+RUN pip install --upgrade pip && \
+    pip install pyinstaller && \
+    pip install -r requirements.txt
+
+# Copy source code
+COPY . .
+
+# Build script
+COPY build/docker-build.sh /docker-build.sh
+RUN chmod +x /docker-build.sh
+
+ENTRYPOINT ["/docker-build.sh"]

@@ -1,0 +1,24 @@
+{% for entry in entries %}
+<tr id="blocklist-{{ entry.ip | replace('.', '-') }}">
+    <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{{ entry.ip }}</td>
+    <td class="px-6 py-4 text-sm text-gray-500">{{ entry.reason or '-' }}</td>
+    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+        {{ entry.added_at.strftime('%Y-%m-%d %H:%M:%S') }}
+    </td>
+    <td class="px-6 py-4 whitespace-nowrap text-sm">
+        <button hx-delete="/blocklist/{{ entry.ip }}"
+                hx-target="#blocklist-{{ entry.ip | replace('.', '-') }}"
+                hx-swap="outerHTML"
+                hx-confirm="Are you sure you want to unblock this IP?"
+                class="text-green-600 hover:text-green-900">
+            Unblock
+        </button>
+    </td>
+</tr>
+{% else %}
+<tr>
+    <td colspan="4" class="px-6 py-4 text-center text-sm text-gray-500">
+        No blocked IPs. Add an IP above to block it.
+    </td>
+</tr>
+{% endfor %}

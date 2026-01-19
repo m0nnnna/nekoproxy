@@ -1,0 +1,50 @@
+from datetime import datetime
+from typing import Optional, List
+from pydantic import BaseModel, Field
+
+from .common import HealthStatus
+from .rule import ForwardingRuleResponse
+
+
+class AgentRegistration(BaseModel):
+    """Sent by agent when registering with controller."""
+    hostname: str
+    wireguard_ip: str
+    public_ip: Optional[str] = None
+    version: str = "1.0.0"
+
+
+class AgentHeartbeat(BaseModel):
+    """Sent by agent every 30 seconds."""
+    active_connections: int = 0
+    cpu_percent: float = 0.0
+    memory_percent: float = 0.0
+    bytes_sent: int = 0
+    bytes_received: int = 0
+
+
+class AgentConfig(BaseModel):
+    """Configuration sent from controller to agent."""
+    agent_id: int
+    config_version: int = 1
+    forwarding_rules: List[ForwardingRuleResponse] = Field(default_factory=list)
+    blocklist: List[str] = Field(default_factory=list)
+    heartbeat_interval: int = 30
+
+
+class AgentStatus(BaseModel):
+    """Agent status as tracked by controller."""
+    id: int
+    hostname: str
+    wireguard_ip: str
+    public_ip: Optional[str] = None
+    status: HealthStatus = HealthStatus.UNKNOWN
+    last_heartbeat: Optional[datetime] = None
+    active_connections: int = 0
+    cpu_percent: float = 0.0
+    memory_percent: float = 0.0
+    version: str = "1.0.0"
+    created_at: datetime
+
+    class Config:
+        from_attributes = True

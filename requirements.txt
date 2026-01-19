@@ -1,0 +1,18 @@
+# Controller dependencies
+fastapi>=0.109.0
+uvicorn[standard]>=0.27.0
+sqlalchemy>=2.0.0
+pydantic>=2.0.0
+pydantic-settings>=2.0.0
+jinja2>=3.1.0
+python-multipart>=0.0.6
+
+# Agent dependencies
+httpx>=0.26.0
+psutil>=5.9.0
+
+# Shared
+aiofiles>=23.0.0
+
+# Build (optional - only needed for creating executables)
+# pyinstaller>=6.0.0

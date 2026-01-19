@@ -1,0 +1,38 @@
+<div class="bg-white shadow rounded-lg p-6">
+    <div class="text-sm font-medium text-gray-500">Connections (24h)</div>
+    <div class="mt-2 text-3xl font-semibold text-gray-900">{{ stats.total_connections }}</div>
+</div>
+<div class="bg-white shadow rounded-lg p-6">
+    <div class="text-sm font-medium text-gray-500">Blocked (24h)</div>
+    <div class="mt-2 text-3xl font-semibold text-red-600">{{ stats.blocked_connections }}</div>
+</div>
+<div class="bg-white shadow rounded-lg p-6">
+    <div class="text-sm font-medium text-gray-500">Data Sent (24h)</div>
+    <div class="mt-2 text-3xl font-semibold text-gray-900">
+        {% set bytes = stats.total_bytes_sent %}
+        {% if bytes >= 1073741824 %}
+        {{ "%.1f"|format(bytes / 1073741824) }} GB
+        {% elif bytes >= 1048576 %}
+        {{ "%.1f"|format(bytes / 1048576) }} MB
+        {% elif bytes >= 1024 %}
+        {{ "%.1f"|format(bytes / 1024) }} KB
+        {% else %}
+        {{ bytes }} B
+        {% endif %}
+    </div>
+</div>
+<div class="bg-white shadow rounded-lg p-6">
+    <div class="text-sm font-medium text-gray-500">Data Received (24h)</div>
+    <div class="mt-2 text-3xl font-semibold text-gray-900">
+        {% set bytes = stats.total_bytes_received %}
+        {% if bytes >= 1073741824 %}
+        {{ "%.1f"|format(bytes / 1073741824) }} GB
+        {% elif bytes >= 1048576 %}
+        {{ "%.1f"|format(bytes / 1048576) }} MB
+        {% elif bytes >= 1024 %}
+        {{ "%.1f"|format(bytes / 1024) }} KB
+        {% else %}
+        {{ bytes }} B
+        {% endif %}
+    </div>
+</div>

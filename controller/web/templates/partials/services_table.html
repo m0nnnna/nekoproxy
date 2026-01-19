@@ -1,0 +1,31 @@
+{% for service in services %}
+<tr id="service-{{ service.id }}">
+    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ service.id }}</td>
+    <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{{ service.name }}</td>
+    <td class="px-6 py-4 text-sm text-gray-500">{{ service.description or '-' }}</td>
+    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+        {{ service.default_backend_host }}:{{ service.default_backend_port }}
+    </td>
+    <td class="px-6 py-4 whitespace-nowrap">
+        <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full
+            {% if service.protocol.value == 'tcp' %}bg-blue-100 text-blue-800{% else %}bg-purple-100 text-purple-800{% endif %}">
+            {{ service.protocol.value.upper() }}
+        </span>
+    </td>
+    <td class="px-6 py-4 whitespace-nowrap text-sm">
+        <button hx-delete="/services/{{ service.id }}"
+                hx-target="#service-{{ service.id }}"
+                hx-swap="outerHTML"
+                hx-confirm="Are you sure? This will also delete all forwarding rules for this service."
+                class="text-red-600 hover:text-red-900">
+            Delete
+        </button>
+    </td>
+</tr>
+{% else %}
+<tr>
+    <td colspan="6" class="px-6 py-4 text-center text-sm text-gray-500">
+        No services defined. Add a service above.
+    </td>
+</tr>
+{% endfor %}
