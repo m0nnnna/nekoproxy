@@ -3,7 +3,7 @@ from typing import Optional, List
 from pydantic import BaseModel, Field
 
 from .common import HealthStatus
-from .rule import ForwardingRuleResponse
+from .service import ServiceResponse
 
 
 class AgentRegistration(BaseModel):
@@ -27,7 +27,7 @@ class AgentConfig(BaseModel):
     """Configuration sent from controller to agent."""
     agent_id: int
     config_version: int = 1
-    forwarding_rules: List[ForwardingRuleResponse] = Field(default_factory=list)
+    services: List[ServiceResponse] = Field(default_factory=list)  # Services assigned to this agent
     blocklist: List[str] = Field(default_factory=list)
     heartbeat_interval: int = 30
 

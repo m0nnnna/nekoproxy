@@ -3,7 +3,7 @@ from sqlalchemy import Column, Integer, String, Boolean, Float, DateTime, Foreig
 from sqlalchemy.orm import relationship
 
 from .database import Base
-from shared.models.common import Protocol, HealthStatus
+from shared.models.common import Protocol, HealthStatus, FirewallAction
 
 
 class Agent(Base):
@@ -24,6 +24,7 @@ class Agent(Base):
 
     # Relationships
     connection_stats = relationship("ConnectionStat", back_populates="agent", cascade="all, delete-orphan")
+    service_assignments = relationship("ServiceAssignment", back_populates="agent", cascade="all, delete-orphan")
 
 
 class Service(Base):
@@ -32,42 +33,32 @@ class Service(Base):
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(100), unique=True, nullable=False)
     description = Column(Text, nullable=True)
-    default_backend_host = Column(String(255), nullable=False)
-    default_backend_port = Column(Integer, nullable=False)
+    listen_port = Column(Integer, nullable=False)  # Port to listen on
+    backend_host = Column(String(255), nullable=False)  # Backend server
+    backend_port = Column(Integer, nullable=False)  # Backend port
     protocol = Column(SQLEnum(Protocol), default=Protocol.TCP)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     # Relationships
-    forwarding_rules = relationship("ForwardingRule", back_populates="service", cascade="all, delete-orphan")
+    assignments = relationship("ServiceAssignment", back_populates="service", cascade="all, delete-orphan")
+    connection_stats = relationship("ConnectionStat", back_populates="service", cascade="all, delete-orphan")
 
 
-class ForwardingRule(Base):
-    __tablename__ = "forwarding_rules"
+class ServiceAssignment(Base):
+    """Assigns a service to an agent. If agent_id is NULL, the service is assigned to all agents."""
+    __tablename__ = "service_assignments"
 
     id = Column(Integer, primary_key=True, index=True)
     service_id = Column(Integer, ForeignKey("services.id"), nullable=False)
-    listen_port = Column(Integer, nullable=False)
-    backend_host = Column(String(255), nullable=True)  # Override service default
-    backend_port = Column(Integer, nullable=True)  # Override service default
-    protocol = Column(SQLEnum(Protocol), default=Protocol.TCP)
+    agent_id = Column(Integer, ForeignKey("agents.id"), nullable=True)  # NULL = all agents
     enabled = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     # Relationships
-    service = relationship("Service", back_populates="forwarding_rules")
-    connection_stats = relationship("ConnectionStat", back_populates="forwarding_rule", cascade="all, delete-orphan")
-
-    @property
-    def resolved_backend_host(self) -> str:
-        """Get effective backend host (rule override or service default)."""
-        return self.backend_host or self.service.default_backend_host
-
-    @property
-    def resolved_backend_port(self) -> int:
-        """Get effective backend port (rule override or service default)."""
-        return self.backend_port or self.service.default_backend_port
+    service = relationship("Service", back_populates="assignments")
+    agent = relationship("Agent", back_populates="service_assignments")
 
 
 class BlocklistEntry(Base):
@@ -84,7 +75,7 @@ class ConnectionStat(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     agent_id = Column(Integer, ForeignKey("agents.id"), nullable=False)
-    service_id = Column(Integer, ForeignKey("forwarding_rules.id"), nullable=True)
+    service_id = Column(Integer, ForeignKey("services.id"), nullable=True)
     timestamp = Column(DateTime, default=datetime.utcnow, index=True)
     client_ip = Column(String(45), nullable=False)
     status = Column(String(20), nullable=False)  # connected, disconnected, blocked
@@ -94,4 +85,18 @@ class ConnectionStat(Base):
 
     # Relationships
     agent = relationship("Agent", back_populates="connection_stats")
-    forwarding_rule = relationship("ForwardingRule", back_populates="connection_stats")
+    service = relationship("Service", back_populates="connection_stats")
+
+
+class FirewallRule(Base):
+    __tablename__ = "firewall_rules"
+
+    id = Column(Integer, primary_key=True, index=True)
+    port = Column(Integer, nullable=False)
+    protocol = Column(SQLEnum(Protocol), default=Protocol.TCP)
+    interface = Column(String(50), nullable=False)  # "public", "wireguard", or specific interface
+    action = Column(SQLEnum(FirewallAction), default=FirewallAction.BLOCK)
+    description = Column(Text, nullable=True)
+    enabled = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

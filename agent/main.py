@@ -59,26 +59,26 @@ class NekoProxyAgent:
         self._tcp_manager.update_blocklist(config.blocklist)
         self._udp_manager.update_blocklist(config.blocklist)
 
-        # Convert rules to dict format for proxy managers
-        rules = [
+        # Convert services to dict format for proxy managers
+        services = [
             {
-                "listen_port": r.listen_port,
-                "protocol": r.protocol.value,
-                "resolved_backend_host": r.resolved_backend_host,
-                "resolved_backend_port": r.resolved_backend_port,
-                "service_id": r.service_id,
-                "service_name": r.service_name
+                "listen_port": s.listen_port,
+                "protocol": s.protocol.value,
+                "backend_host": s.backend_host,
+                "backend_port": s.backend_port,
+                "service_id": s.id,
+                "service_name": s.name
             }
-            for r in config.forwarding_rules
+            for s in config.services
         ]
 
-        # Sync proxies with new rules
-        await self._tcp_manager.sync_proxies(rules)
-        await self._udp_manager.sync_proxies(rules)
+        # Sync proxies with new services
+        await self._tcp_manager.sync_proxies(services)
+        await self._udp_manager.sync_proxies(services)
 
         logger.info(
-            f"Config applied: {len([r for r in rules if r['protocol'] == 'tcp'])} TCP rules, "
-            f"{len([r for r in rules if r['protocol'] == 'udp'])} UDP rules, "
+            f"Config applied: {len([s for s in services if s['protocol'] == 'tcp'])} TCP services, "
+            f"{len([s for s in services if s['protocol'] == 'udp'])} UDP services, "
             f"{len(config.blocklist)} blocked IPs"
         )
 

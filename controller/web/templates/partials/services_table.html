@@ -1,10 +1,17 @@
 {% for service in services %}
 <tr id="service-{{ service.id }}">
     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ service.id }}</td>
-    <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{{ service.name }}</td>
-    <td class="px-6 py-4 text-sm text-gray-500">{{ service.description or '-' }}</td>
+    <td class="px-6 py-4 whitespace-nowrap">
+        <div class="text-sm font-medium text-gray-900">{{ service.name }}</div>
+        {% if service.description %}
+        <div class="text-xs text-gray-500">{{ service.description }}</div>
+        {% endif %}
+    </td>
+    <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-blue-600">
+        :{{ service.listen_port }}
+    </td>
     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-        {{ service.default_backend_host }}:{{ service.default_backend_port }}
+        {{ service.backend_host }}:{{ service.backend_port }}
     </td>
     <td class="px-6 py-4 whitespace-nowrap">
         <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full
@@ -16,7 +23,7 @@
         <button hx-delete="/services/{{ service.id }}"
                 hx-target="#service-{{ service.id }}"
                 hx-swap="outerHTML"
-                hx-confirm="Are you sure? This will also delete all forwarding rules for this service."
+                hx-confirm="Are you sure? This will also delete all assignments for this service."
                 class="text-red-600 hover:text-red-900">
             Delete
         </button>

@@ -1,0 +1,142 @@
+{% extends "base.html" %}
+
+{% block title %}Firewall Rules - NekoProxy{% endblock %}
+
+{% block content %}
+<div class="flex justify-between items-center mb-6">
+    <h1 class="text-2xl font-bold text-gray-900">Firewall Rules</h1>
+</div>
+
+<!-- Info Banner -->
+<div class="bg-blue-50 border-l-4 border-blue-400 p-4 mb-6">
+    <div class="flex">
+        <div class="ml-3">
+            <p class="text-sm text-blue-700">
+                <strong>Interface-based port blocking:</strong> Block or allow ports on specific interfaces.
+                Use "public" for the public interface or "wireguard" for the WireGuard interface.
+                You can also specify specific interface names like "eth0" or "wg0".
+            </p>
+        </div>
+    </div>
+</div>
+
+<!-- Add Firewall Rule Form -->
+<div class="bg-white shadow rounded-lg p-6 mb-6">
+    <h2 class="text-lg font-semibold text-gray-900 mb-4">Add Firewall Rule</h2>
+    <form hx-post="/firewall" hx-target="#firewall-table" hx-swap="innerHTML" class="space-y-4">
+        <div class="grid grid-cols-1 md:grid-cols-6 gap-4">
+            <div>
+                <label class="block text-sm font-medium text-gray-700">Port</label>
+                <input type="number" name="port" required placeholder="22"
+                       class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm border px-3 py-2">
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700">Protocol</label>
+                <select name="protocol"
+                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm border px-3 py-2">
+                    {% for p in protocols %}
+                    <option value="{{ p }}">{{ p.upper() }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700">Interface</label>
+                <select name="interface" required
+                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm border px-3 py-2">
+                    <option value="public">Public (block from internet)</option>
+                    <option value="wireguard">WireGuard (allow via VPN)</option>
+                    <option value="all">All Interfaces</option>
+                </select>
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700">Action</label>
+                <select name="action"
+                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm border px-3 py-2">
+                    {% for a in actions %}
+                    <option value="{{ a }}" {% if a == 'block' %}selected{% endif %}>{{ a.upper() }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700">Description</label>
+                <input type="text" name="description" placeholder="Optional description"
+                       class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm border px-3 py-2">
+            </div>
+            <div class="flex items-end">
+                <button type="submit"
+                        class="w-full bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2">
+                    Add Rule
+                </button>
+            </div>
+        </div>
+    </form>
+</div>
+
+<!-- Common Presets -->
+<div class="bg-white shadow rounded-lg p-6 mb-6">
+    <h2 class="text-lg font-semibold text-gray-900 mb-4">Quick Presets</h2>
+    <div class="flex flex-wrap gap-2">
+        <form hx-post="/firewall" hx-target="#firewall-table" hx-swap="innerHTML" class="inline">
+            <input type="hidden" name="port" value="22">
+            <input type="hidden" name="protocol" value="tcp">
+            <input type="hidden" name="interface" value="public">
+            <input type="hidden" name="action" value="block">
+            <input type="hidden" name="description" value="Block SSH from public">
+            <button type="submit" class="bg-red-100 text-red-800 px-3 py-1 rounded-md text-sm hover:bg-red-200">
+                Block SSH (22) on Public
+            </button>
+        </form>
+        <form hx-post="/firewall" hx-target="#firewall-table" hx-swap="innerHTML" class="inline">
+            <input type="hidden" name="port" value="22">
+            <input type="hidden" name="protocol" value="tcp">
+            <input type="hidden" name="interface" value="wireguard">
+            <input type="hidden" name="action" value="allow">
+            <input type="hidden" name="description" value="Allow SSH via WireGuard">
+            <button type="submit" class="bg-green-100 text-green-800 px-3 py-1 rounded-md text-sm hover:bg-green-200">
+                Allow SSH (22) on WireGuard
+            </button>
+        </form>
+        <form hx-post="/firewall" hx-target="#firewall-table" hx-swap="innerHTML" class="inline">
+            <input type="hidden" name="port" value="3306">
+            <input type="hidden" name="protocol" value="tcp">
+            <input type="hidden" name="interface" value="public">
+            <input type="hidden" name="action" value="block">
+            <input type="hidden" name="description" value="Block MySQL from public">
+            <button type="submit" class="bg-red-100 text-red-800 px-3 py-1 rounded-md text-sm hover:bg-red-200">
+                Block MySQL (3306) on Public
+            </button>
+        </form>
+        <form hx-post="/firewall" hx-target="#firewall-table" hx-swap="innerHTML" class="inline">
+            <input type="hidden" name="port" value="5432">
+            <input type="hidden" name="protocol" value="tcp">
+            <input type="hidden" name="interface" value="public">
+            <input type="hidden" name="action" value="block">
+            <input type="hidden" name="description" value="Block PostgreSQL from public">
+            <button type="submit" class="bg-red-100 text-red-800 px-3 py-1 rounded-md text-sm hover:bg-red-200">
+                Block PostgreSQL (5432) on Public
+            </button>
+        </form>
+    </div>
+</div>
+
+<!-- Firewall Rules Table -->
+<div class="bg-white shadow rounded-lg overflow-hidden">
+    <table class="min-w-full divide-y divide-gray-200">
+        <thead class="bg-gray-50">
+            <tr>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">ID</th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Port</th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Protocol</th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Interface</th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Action</th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Description</th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
+            </tr>
+        </thead>
+        <tbody class="bg-white divide-y divide-gray-200" id="firewall-table">
+            {% include "partials/firewall_table.html" %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

@@ -10,11 +10,12 @@ from controller.database.database import get_db
 from controller.database.repositories import (
     AgentRepository,
     ServiceRepository,
-    ForwardingRuleRepository,
+    ServiceAssignmentRepository,
     BlocklistRepository,
-    ConnectionStatRepository
+    ConnectionStatRepository,
+    FirewallRuleRepository
 )
-from shared.models.common import Protocol
+from shared.models.common import Protocol, FirewallAction
 
 # Ensure templates directory exists
 settings.templates_dir.mkdir(parents=True, exist_ok=True)
@@ -84,8 +85,9 @@ async def create_service_htmx(
     request: Request,
     name: str = Form(...),
     description: str = Form(""),
-    default_backend_host: str = Form(...),
-    default_backend_port: int = Form(...),
+    listen_port: int = Form(...),
+    backend_host: str = Form(...),
+    backend_port: int = Form(...),
     protocol: str = Form("tcp"),
     db: Session = Depends(get_db)
 ):
@@ -98,11 +100,20 @@ async def create_service_htmx(
             status_code=400
         )
 
+    # Check for listen port conflict
+    existing_port = repo.get_by_listen_port(listen_port, Protocol(protocol))
+    if existing_port:
+        return HTMLResponse(
+            f'<div class="text-red-500">Listen port {listen_port}/{protocol} already in use</div>',
+            status_code=400
+        )
+
     repo.create(
         name=name,
         description=description or None,
-        default_backend_host=default_backend_host,
-        default_backend_port=default_backend_port,
+        listen_port=listen_port,
+        backend_host=backend_host,
+        backend_port=backend_port,
         protocol=Protocol(protocol)
     )
 
@@ -123,37 +134,37 @@ async def delete_service_htmx(service_id: int, db: Session = Depends(get_db)):
     return HTMLResponse("")
 
 
-@router.get("/rules", response_class=HTMLResponse)
-async def rules_page(request: Request, db: Session = Depends(get_db)):
-    """Forwarding rules management page."""
-    rule_repo = ForwardingRuleRepository(db)
+@router.get("/assignments", response_class=HTMLResponse)
+async def assignments_page(request: Request, db: Session = Depends(get_db)):
+    """Service assignments management page."""
+    assign_repo = ServiceAssignmentRepository(db)
     service_repo = ServiceRepository(db)
+    agent_repo = AgentRepository(db)
 
-    rules = rule_repo.get_all()
+    assignments = assign_repo.get_all()
     services = service_repo.get_all()
+    agents = agent_repo.get_all()
 
-    return templates.TemplateResponse("rules.html", {
+    return templates.TemplateResponse("assignments.html", {
         "request": request,
-        "rules": rules,
+        "assignments": assignments,
         "services": services,
-        "protocols": [p.value for p in Protocol],
-        "active_page": "rules"
+        "agents": agents,
+        "active_page": "assignments"
     })
 
 
-@router.post("/rules", response_class=HTMLResponse)
-async def create_rule_htmx(
+@router.post("/assignments", response_class=HTMLResponse)
+async def create_assignment_htmx(
     request: Request,
     service_id: int = Form(...),
-    listen_port: int = Form(...),
-    backend_host: str = Form(""),
-    backend_port: int = Form(None),
-    protocol: str = Form("tcp"),
+    agent_id: str = Form(""),  # Empty string means all agents
     db: Session = Depends(get_db)
 ):
-    """Create forwarding rule via htmx form."""
-    rule_repo = ForwardingRuleRepository(db)
+    """Create service assignment via htmx form."""
+    assign_repo = ServiceAssignmentRepository(db)
     service_repo = ServiceRepository(db)
+    agent_repo = AgentRepository(db)
 
     # Validate service exists
     service = service_repo.get_by_id(service_id)
@@ -163,61 +174,75 @@ async def create_rule_htmx(
             status_code=400
         )
 
-    # Check port conflict
-    existing = rule_repo.get_by_port(listen_port, Protocol(protocol))
-    if existing:
+    # Parse agent_id (empty string = all agents)
+    parsed_agent_id = int(agent_id) if agent_id else None
+
+    # Validate agent if specified
+    if parsed_agent_id:
+        agent = agent_repo.get_by_id(parsed_agent_id)
+        if not agent:
+            return HTMLResponse(
+                '<div class="text-red-500">Agent not found</div>',
+                status_code=400
+            )
+
+    # Check for duplicate
+    if assign_repo.exists(service_id, parsed_agent_id):
+        target = "all agents" if parsed_agent_id is None else f"agent {parsed_agent_id}"
         return HTMLResponse(
-            f'<div class="text-red-500">Port {listen_port}/{protocol} already in use</div>',
+            f'<div class="text-red-500">Service already assigned to {target}</div>',
             status_code=400
         )
 
-    rule_repo.create(
+    assign_repo.create(
         service_id=service_id,
-        listen_port=listen_port,
-        backend_host=backend_host or None,
-        backend_port=backend_port,
-        protocol=Protocol(protocol),
+        agent_id=parsed_agent_id,
         enabled=True
     )
 
-    # Return updated rules list
-    rules = rule_repo.get_all()
+    # Return updated assignments list
+    assignments = assign_repo.get_all()
     services = service_repo.get_all()
-    return templates.TemplateResponse("partials/rules_table.html", {
+    agents = agent_repo.get_all()
+    return templates.TemplateResponse("partials/assignments_table.html", {
         "request": request,
-        "rules": rules,
-        "services": services
+        "assignments": assignments,
+        "services": services,
+        "agents": agents
     })
 
 
-@router.delete("/rules/{rule_id}", response_class=HTMLResponse)
-async def delete_rule_htmx(rule_id: int, db: Session = Depends(get_db)):
-    """Delete rule via htmx."""
-    repo = ForwardingRuleRepository(db)
-    if not repo.delete(rule_id):
+@router.delete("/assignments/{assignment_id}", response_class=HTMLResponse)
+async def delete_assignment_htmx(assignment_id: int, db: Session = Depends(get_db)):
+    """Delete assignment via htmx."""
+    repo = ServiceAssignmentRepository(db)
+    if not repo.delete(assignment_id):
         raise HTTPException(status_code=404)
     return HTMLResponse("")
 
 
-@router.post("/rules/{rule_id}/toggle", response_class=HTMLResponse)
-async def toggle_rule_htmx(request: Request, rule_id: int, db: Session = Depends(get_db)):
-    """Toggle rule enabled status via htmx."""
-    rule_repo = ForwardingRuleRepository(db)
+@router.post("/assignments/{assignment_id}/toggle", response_class=HTMLResponse)
+async def toggle_assignment_htmx(request: Request, assignment_id: int, db: Session = Depends(get_db)):
+    """Toggle assignment enabled status via htmx."""
+    assign_repo = ServiceAssignmentRepository(db)
     service_repo = ServiceRepository(db)
+    agent_repo = AgentRepository(db)
 
-    rule = rule_repo.get_by_id(rule_id)
-    if not rule:
+    assignment = assign_repo.get_by_id(assignment_id)
+    if not assignment:
         raise HTTPException(status_code=404)
 
-    rule_repo.update(rule_id, enabled=not rule.enabled)
+    assign_repo.update(assignment_id, enabled=not assignment.enabled)
 
-    # Return updated rules list
-    rules = rule_repo.get_all()
+    # Return updated assignments list
+    assignments = assign_repo.get_all()
     services = service_repo.get_all()
-    return templates.TemplateResponse("partials/rules_table.html", {
+    agents = agent_repo.get_all()
+    return templates.TemplateResponse("partials/assignments_table.html", {
         "request": request,
-        "rules": rules,
-        "services": services
+        "assignments": assignments,
+        "services": services,
+        "agents": agents
     })
 
 
@@ -282,6 +307,87 @@ async def stats_page(request: Request, db: Session = Depends(get_db)):
         "summary": summary,
         "connections": recent,
         "active_page": "stats"
+    })
+
+
+@router.get("/firewall", response_class=HTMLResponse)
+async def firewall_page(request: Request, db: Session = Depends(get_db)):
+    """Firewall rules management page."""
+    repo = FirewallRuleRepository(db)
+    rules = repo.get_all()
+
+    return templates.TemplateResponse("firewall.html", {
+        "request": request,
+        "rules": rules,
+        "protocols": [p.value for p in Protocol],
+        "actions": [a.value for a in FirewallAction],
+        "active_page": "firewall"
+    })
+
+
+@router.post("/firewall", response_class=HTMLResponse)
+async def create_firewall_rule_htmx(
+    request: Request,
+    port: int = Form(...),
+    protocol: str = Form("tcp"),
+    interface: str = Form(...),
+    action: str = Form("block"),
+    description: str = Form(""),
+    db: Session = Depends(get_db)
+):
+    """Create firewall rule via htmx form."""
+    repo = FirewallRuleRepository(db)
+
+    # Check for duplicate
+    existing = repo.get_by_port_interface(port, Protocol(protocol), interface)
+    if existing:
+        return HTMLResponse(
+            f'<div class="text-red-500">Rule for port {port}/{protocol} on {interface} already exists</div>',
+            status_code=400
+        )
+
+    repo.create(
+        port=port,
+        protocol=Protocol(protocol),
+        interface=interface,
+        action=FirewallAction(action),
+        description=description or None,
+        enabled=True
+    )
+
+    # Return updated rules list
+    rules = repo.get_all()
+    return templates.TemplateResponse("partials/firewall_table.html", {
+        "request": request,
+        "rules": rules
+    })
+
+
+@router.delete("/firewall/{rule_id}", response_class=HTMLResponse)
+async def delete_firewall_rule_htmx(rule_id: int, db: Session = Depends(get_db)):
+    """Delete firewall rule via htmx."""
+    repo = FirewallRuleRepository(db)
+    if not repo.delete(rule_id):
+        raise HTTPException(status_code=404)
+    return HTMLResponse("")
+
+
+@router.post("/firewall/{rule_id}/toggle", response_class=HTMLResponse)
+async def toggle_firewall_rule_htmx(request: Request, rule_id: int, db: Session = Depends(get_db)):
+    """Toggle firewall rule enabled status via htmx."""
+    repo = FirewallRuleRepository(db)
+
+    rule = repo.get_by_id(rule_id)
+    if not rule:
+        raise HTTPException(status_code=404)
+
+    repo.update(rule_id, enabled=not rule.enabled)
+
+    # Return updated rules list
+    rules = repo.get_all()
+    return templates.TemplateResponse("partials/firewall_table.html", {
+        "request": request,
+        "rules": rules
     })
 
 

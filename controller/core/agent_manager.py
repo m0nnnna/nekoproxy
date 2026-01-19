@@ -4,10 +4,9 @@ from itertools import cycle
 
 from sqlalchemy.orm import Session
 
-from controller.database.repositories import AgentRepository, ForwardingRuleRepository, BlocklistRepository
+from controller.database.repositories import AgentRepository, ServiceAssignmentRepository, BlocklistRepository
 from controller.database.models import Agent
-from shared.models import AgentConfig, AgentRegistration, AgentHeartbeat
-from shared.models.rule import ForwardingRuleResponse
+from shared.models import AgentConfig, AgentRegistration, AgentHeartbeat, ServiceResponse
 from controller.config import settings
 
 logger = logging.getLogger(__name__)
@@ -19,7 +18,7 @@ class AgentManager:
     def __init__(self, db: Session):
         self.db = db
         self.agent_repo = AgentRepository(db)
-        self.rule_repo = ForwardingRuleRepository(db)
+        self.assignment_repo = ServiceAssignmentRepository(db)
         self.blocklist_repo = BlocklistRepository(db)
         self._agent_cycle: Optional[cycle] = None
         self._last_agent_count = 0
@@ -67,24 +66,27 @@ class AgentManager:
         if not agent:
             return None
 
-        # Get enabled forwarding rules
-        rules = self.rule_repo.get_enabled()
-        rule_responses = []
-        for rule in rules:
-            rule_responses.append(ForwardingRuleResponse(
-                id=rule.id,
-                service_id=rule.service_id,
-                listen_port=rule.listen_port,
-                backend_host=rule.backend_host,
-                backend_port=rule.backend_port,
-                protocol=rule.protocol,
-                enabled=rule.enabled,
-                resolved_backend_host=rule.resolved_backend_host,
-                resolved_backend_port=rule.resolved_backend_port,
-                service_name=rule.service.name,
-                created_at=rule.created_at,
-                updated_at=rule.updated_at
-            ))
+        # Get enabled service assignments for this agent
+        assignments = self.assignment_repo.get_enabled_for_agent(agent_id)
+
+        # Build list of services from assignments
+        services = []
+        seen_service_ids = set()
+        for assignment in assignments:
+            if assignment.service_id not in seen_service_ids:
+                seen_service_ids.add(assignment.service_id)
+                service = assignment.service
+                services.append(ServiceResponse(
+                    id=service.id,
+                    name=service.name,
+                    description=service.description,
+                    listen_port=service.listen_port,
+                    backend_host=service.backend_host,
+                    backend_port=service.backend_port,
+                    protocol=service.protocol,
+                    created_at=service.created_at,
+                    updated_at=service.updated_at
+                ))
 
         # Get blocklist
         blocklist = self.blocklist_repo.get_all_ips()
@@ -92,7 +94,7 @@ class AgentManager:
         return AgentConfig(
             agent_id=agent_id,
             config_version=settings.config_version,
-            forwarding_rules=rule_responses,
+            services=services,
             blocklist=blocklist,
             heartbeat_interval=settings.heartbeat_interval
         )

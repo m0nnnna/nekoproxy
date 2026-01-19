@@ -1,10 +1,10 @@
 from datetime import datetime, timedelta
 from typing import Optional, List
 from sqlalchemy.orm import Session
-from sqlalchemy import and_
+from sqlalchemy import and_, or_
 
-from .models import Agent, Service, ForwardingRule, BlocklistEntry, ConnectionStat
-from shared.models.common import HealthStatus, Protocol
+from .models import Agent, Service, ServiceAssignment, BlocklistEntry, ConnectionStat, FirewallRule
+from shared.models.common import HealthStatus, Protocol, FirewallAction
 
 
 class AgentRepository:
@@ -69,13 +69,14 @@ class ServiceRepository:
     def __init__(self, db: Session):
         self.db = db
 
-    def create(self, name: str, default_backend_host: str, default_backend_port: int,
+    def create(self, name: str, listen_port: int, backend_host: str, backend_port: int,
                description: Optional[str] = None, protocol: Protocol = Protocol.TCP) -> Service:
         service = Service(
             name=name,
             description=description,
-            default_backend_host=default_backend_host,
-            default_backend_port=default_backend_port,
+            listen_port=listen_port,
+            backend_host=backend_host,
+            backend_port=backend_port,
             protocol=protocol
         )
         self.db.add(service)
@@ -88,6 +89,11 @@ class ServiceRepository:
 
     def get_by_name(self, name: str) -> Optional[Service]:
         return self.db.query(Service).filter(Service.name == name).first()
+
+    def get_by_listen_port(self, listen_port: int, protocol: Protocol) -> Optional[Service]:
+        return self.db.query(Service).filter(
+            and_(Service.listen_port == listen_port, Service.protocol == protocol)
+        ).first()
 
     def get_all(self) -> List[Service]:
         return self.db.query(Service).all()
@@ -111,54 +117,71 @@ class ServiceRepository:
         return False
 
 
-class ForwardingRuleRepository:
+class ServiceAssignmentRepository:
     def __init__(self, db: Session):
         self.db = db
 
-    def create(self, service_id: int, listen_port: int, protocol: Protocol = Protocol.TCP,
-               backend_host: Optional[str] = None, backend_port: Optional[int] = None,
-               enabled: bool = True) -> ForwardingRule:
-        rule = ForwardingRule(
+    def create(self, service_id: int, agent_id: Optional[int] = None, enabled: bool = True) -> ServiceAssignment:
+        assignment = ServiceAssignment(
             service_id=service_id,
-            listen_port=listen_port,
-            backend_host=backend_host,
-            backend_port=backend_port,
-            protocol=protocol,
+            agent_id=agent_id,
             enabled=enabled
         )
-        self.db.add(rule)
+        self.db.add(assignment)
         self.db.commit()
-        self.db.refresh(rule)
-        return rule
+        self.db.refresh(assignment)
+        return assignment
 
-    def get_by_id(self, rule_id: int) -> Optional[ForwardingRule]:
-        return self.db.query(ForwardingRule).filter(ForwardingRule.id == rule_id).first()
+    def get_by_id(self, assignment_id: int) -> Optional[ServiceAssignment]:
+        return self.db.query(ServiceAssignment).filter(ServiceAssignment.id == assignment_id).first()
 
-    def get_all(self) -> List[ForwardingRule]:
-        return self.db.query(ForwardingRule).all()
+    def get_all(self) -> List[ServiceAssignment]:
+        return self.db.query(ServiceAssignment).all()
 
-    def get_enabled(self) -> List[ForwardingRule]:
-        return self.db.query(ForwardingRule).filter(ForwardingRule.enabled == True).all()
+    def get_enabled(self) -> List[ServiceAssignment]:
+        return self.db.query(ServiceAssignment).filter(ServiceAssignment.enabled == True).all()
 
-    def get_by_port(self, listen_port: int, protocol: Protocol) -> Optional[ForwardingRule]:
-        return self.db.query(ForwardingRule).filter(
-            and_(ForwardingRule.listen_port == listen_port, ForwardingRule.protocol == protocol)
-        ).first()
+    def get_by_agent(self, agent_id: int) -> List[ServiceAssignment]:
+        """Get all assignments for a specific agent (including global assignments where agent_id is NULL)."""
+        return self.db.query(ServiceAssignment).filter(
+            or_(ServiceAssignment.agent_id == agent_id, ServiceAssignment.agent_id == None)
+        ).all()
 
-    def update(self, rule_id: int, **kwargs) -> Optional[ForwardingRule]:
-        rule = self.get_by_id(rule_id)
-        if rule:
+    def get_enabled_for_agent(self, agent_id: int) -> List[ServiceAssignment]:
+        """Get enabled assignments for a specific agent (including global assignments)."""
+        return self.db.query(ServiceAssignment).filter(
+            and_(
+                ServiceAssignment.enabled == True,
+                or_(ServiceAssignment.agent_id == agent_id, ServiceAssignment.agent_id == None)
+            )
+        ).all()
+
+    def get_by_service(self, service_id: int) -> List[ServiceAssignment]:
+        return self.db.query(ServiceAssignment).filter(ServiceAssignment.service_id == service_id).all()
+
+    def exists(self, service_id: int, agent_id: Optional[int]) -> bool:
+        """Check if an assignment already exists."""
+        query = self.db.query(ServiceAssignment).filter(ServiceAssignment.service_id == service_id)
+        if agent_id is None:
+            query = query.filter(ServiceAssignment.agent_id == None)
+        else:
+            query = query.filter(ServiceAssignment.agent_id == agent_id)
+        return query.first() is not None
+
+    def update(self, assignment_id: int, **kwargs) -> Optional[ServiceAssignment]:
+        assignment = self.get_by_id(assignment_id)
+        if assignment:
             for key, value in kwargs.items():
-                if hasattr(rule, key):
-                    setattr(rule, key, value)
+                if hasattr(assignment, key):
+                    setattr(assignment, key, value)
             self.db.commit()
-            self.db.refresh(rule)
-        return rule
+            self.db.refresh(assignment)
+        return assignment
 
-    def delete(self, rule_id: int) -> bool:
-        rule = self.get_by_id(rule_id)
-        if rule:
-            self.db.delete(rule)
+    def delete(self, assignment_id: int) -> bool:
+        assignment = self.get_by_id(assignment_id)
+        if assignment:
+            self.db.delete(assignment)
             self.db.commit()
             return True
         return False
@@ -263,3 +286,63 @@ class ConnectionStatRepository:
             "total_bytes_received": total_bytes_received,
             "period_hours": hours
         }
+
+
+class FirewallRuleRepository:
+    def __init__(self, db: Session):
+        self.db = db
+
+    def create(self, port: int, interface: str, protocol: Protocol = Protocol.TCP,
+               action: FirewallAction = FirewallAction.BLOCK, description: Optional[str] = None,
+               enabled: bool = True) -> FirewallRule:
+        rule = FirewallRule(
+            port=port,
+            protocol=protocol,
+            interface=interface,
+            action=action,
+            description=description,
+            enabled=enabled
+        )
+        self.db.add(rule)
+        self.db.commit()
+        self.db.refresh(rule)
+        return rule
+
+    def get_by_id(self, rule_id: int) -> Optional[FirewallRule]:
+        return self.db.query(FirewallRule).filter(FirewallRule.id == rule_id).first()
+
+    def get_all(self) -> List[FirewallRule]:
+        return self.db.query(FirewallRule).all()
+
+    def get_enabled(self) -> List[FirewallRule]:
+        return self.db.query(FirewallRule).filter(FirewallRule.enabled == True).all()
+
+    def get_by_interface(self, interface: str) -> List[FirewallRule]:
+        return self.db.query(FirewallRule).filter(FirewallRule.interface == interface).all()
+
+    def get_by_port_interface(self, port: int, protocol: Protocol, interface: str) -> Optional[FirewallRule]:
+        return self.db.query(FirewallRule).filter(
+            and_(
+                FirewallRule.port == port,
+                FirewallRule.protocol == protocol,
+                FirewallRule.interface == interface
+            )
+        ).first()
+
+    def update(self, rule_id: int, **kwargs) -> Optional[FirewallRule]:
+        rule = self.get_by_id(rule_id)
+        if rule:
+            for key, value in kwargs.items():
+                if hasattr(rule, key):
+                    setattr(rule, key, value)
+            self.db.commit()
+            self.db.refresh(rule)
+        return rule
+
+    def delete(self, rule_id: int) -> bool:
+        rule = self.get_by_id(rule_id)
+        if rule:
+            self.db.delete(rule)
+            self.db.commit()
+            return True
+        return False

@@ -7,24 +7,41 @@
     <h1 class="text-2xl font-bold text-gray-900">Services</h1>
 </div>
 
+<!-- Info Banner -->
+<div class="bg-blue-50 border-l-4 border-blue-400 p-4 mb-6">
+    <div class="flex">
+        <div class="ml-3">
+            <p class="text-sm text-blue-700">
+                <strong>Services</strong> define proxy configurations: which port to listen on and where to forward traffic.
+                After creating a service, go to <strong>Assignments</strong> to deploy it to agents.
+            </p>
+        </div>
+    </div>
+</div>
+
 <!-- Add Service Form -->
 <div class="bg-white shadow rounded-lg p-6 mb-6">
     <h2 class="text-lg font-semibold text-gray-900 mb-4">Add Service</h2>
     <form hx-post="/services" hx-target="#services-table" hx-swap="innerHTML" class="space-y-4">
-        <div class="grid grid-cols-1 md:grid-cols-5 gap-4">
+        <div class="grid grid-cols-1 md:grid-cols-6 gap-4">
             <div>
                 <label class="block text-sm font-medium text-gray-700">Name</label>
-                <input type="text" name="name" required
+                <input type="text" name="name" required placeholder="ssh-proxy"
+                       class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm border px-3 py-2">
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700">Listen Port</label>
+                <input type="number" name="listen_port" required placeholder="2222"
                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm border px-3 py-2">
             </div>
             <div>
                 <label class="block text-sm font-medium text-gray-700">Backend Host</label>
-                <input type="text" name="default_backend_host" required placeholder="192.168.1.100"
+                <input type="text" name="backend_host" required placeholder="192.168.1.100"
                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm border px-3 py-2">
             </div>
             <div>
                 <label class="block text-sm font-medium text-gray-700">Backend Port</label>
-                <input type="number" name="default_backend_port" required placeholder="8080"
+                <input type="number" name="backend_port" required placeholder="22"
                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm border px-3 py-2">
             </div>
             <div>
@@ -45,7 +62,7 @@
         </div>
         <div>
             <label class="block text-sm font-medium text-gray-700">Description (optional)</label>
-            <input type="text" name="description"
+            <input type="text" name="description" placeholder="SSH access to internal server"
                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm border px-3 py-2">
         </div>
     </form>
@@ -58,7 +75,7 @@
             <tr>
                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">ID</th>
                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
-                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Description</th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Listen</th>
                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Backend</th>
                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Protocol</th>
                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>

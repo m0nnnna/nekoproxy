@@ -298,8 +298,8 @@ class TCPProxyManager:
                 logger.info(f"Adding TCP proxy for port {port}")
                 await self.add_proxy(
                     listen_port=port,
-                    backend_host=rule['resolved_backend_host'],
-                    backend_port=rule['resolved_backend_port'],
+                    backend_host=rule['backend_host'],
+                    backend_port=rule['backend_port'],
                     service_id=rule['service_id'],
                     service_name=rule.get('service_name', 'unknown')
                 )

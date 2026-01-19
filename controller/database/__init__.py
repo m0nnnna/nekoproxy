@@ -1,5 +1,5 @@
 from .database import engine, SessionLocal, Base, get_db
-from .models import Agent, Service, ForwardingRule, BlocklistEntry, ConnectionStat
+from .models import Agent, Service, ServiceAssignment, BlocklistEntry, ConnectionStat, FirewallRule
 
 __all__ = [
     "engine",
@@ -8,7 +8,8 @@ __all__ = [
     "get_db",
     "Agent",
     "Service",
-    "ForwardingRule",
+    "ServiceAssignment",
     "BlocklistEntry",
     "ConnectionStat",
+    "FirewallRule",
 ]

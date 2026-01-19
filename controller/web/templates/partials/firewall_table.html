@@ -1,21 +1,36 @@
 {% for rule in rules %}
-<tr id="rule-{{ rule.id }}">
+<tr id="firewall-{{ rule.id }}">
     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ rule.id }}</td>
-    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ rule.service.name }}</td>
     <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-blue-600">
-        :{{ rule.listen_port }}
-    </td>
-    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-        {{ rule.resolved_backend_host }}:{{ rule.resolved_backend_port }}
-        {% if rule.backend_host or rule.backend_port %}
-        <span class="text-xs text-yellow-600">(override)</span>
-        {% endif %}
+        {{ rule.port }}
     </td>
     <td class="px-6 py-4 whitespace-nowrap">
         <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full
             {% if rule.protocol.value == 'tcp' %}bg-blue-100 text-blue-800{% else %}bg-purple-100 text-purple-800{% endif %}">
             {{ rule.protocol.value.upper() }}
         </span>
+    </td>
+    <td class="px-6 py-4 whitespace-nowrap">
+        <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full
+            {% if rule.interface == 'public' %}bg-red-100 text-red-800
+            {% elif rule.interface == 'wireguard' %}bg-green-100 text-green-800
+            {% else %}bg-gray-100 text-gray-800{% endif %}">
+            {{ rule.interface }}
+        </span>
+    </td>
+    <td class="px-6 py-4 whitespace-nowrap">
+        {% if rule.action.value == 'block' %}
+        <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-red-100 text-red-800">
+            BLOCK
+        </span>
+        {% else %}
+        <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">
+            ALLOW
+        </span>
+        {% endif %}
+    </td>
+    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+        {{ rule.description or '-' }}
     </td>
     <td class="px-6 py-4 whitespace-nowrap">
         {% if rule.enabled %}
@@ -29,16 +44,16 @@
         {% endif %}
     </td>
     <td class="px-6 py-4 whitespace-nowrap text-sm space-x-2">
-        <button hx-post="/rules/{{ rule.id }}/toggle"
-                hx-target="#rules-table"
+        <button hx-post="/firewall/{{ rule.id }}/toggle"
+                hx-target="#firewall-table"
                 hx-swap="innerHTML"
                 class="{% if rule.enabled %}text-yellow-600 hover:text-yellow-900{% else %}text-green-600 hover:text-green-900{% endif %}">
             {% if rule.enabled %}Disable{% else %}Enable{% endif %}
         </button>
-        <button hx-delete="/rules/{{ rule.id }}"
-                hx-target="#rule-{{ rule.id }}"
+        <button hx-delete="/firewall/{{ rule.id }}"
+                hx-target="#firewall-{{ rule.id }}"
                 hx-swap="outerHTML"
-                hx-confirm="Are you sure you want to delete this rule?"
+                hx-confirm="Are you sure you want to delete this firewall rule?"
                 class="text-red-600 hover:text-red-900">
             Delete
         </button>
@@ -46,8 +61,8 @@
 </tr>
 {% else %}
 <tr>
-    <td colspan="7" class="px-6 py-4 text-center text-sm text-gray-500">
-        No forwarding rules defined. Add a rule above.
+    <td colspan="8" class="px-6 py-4 text-center text-sm text-gray-500">
+        No firewall rules defined. Add a rule above or use one of the quick presets.
     </td>
 </tr>
 {% endfor %}

@@ -1,8 +1,9 @@
 from .agent import AgentRegistration, AgentHeartbeat, AgentConfig, AgentStatus
 from .service import ServiceCreate, ServiceUpdate, ServiceResponse
-from .rule import ForwardingRuleCreate, ForwardingRuleUpdate, ForwardingRuleResponse
+from .assignment import ServiceAssignmentCreate, ServiceAssignmentUpdate, ServiceAssignmentResponse
+from .firewall import FirewallRuleCreate, FirewallRuleUpdate, FirewallRuleResponse
 from .stats import ConnectionStats, StatsReport
-from .common import Protocol, HealthStatus
+from .common import Protocol, HealthStatus, FirewallAction
 
 __all__ = [
     "AgentRegistration",
@@ -12,11 +13,15 @@ __all__ = [
     "ServiceCreate",
     "ServiceUpdate",
     "ServiceResponse",
-    "ForwardingRuleCreate",
-    "ForwardingRuleUpdate",
-    "ForwardingRuleResponse",
+    "ServiceAssignmentCreate",
+    "ServiceAssignmentUpdate",
+    "ServiceAssignmentResponse",
+    "FirewallRuleCreate",
+    "FirewallRuleUpdate",
+    "FirewallRuleResponse",
     "ConnectionStats",
     "StatsReport",
     "Protocol",
     "HealthStatus",
+    "FirewallAction",
 ]
