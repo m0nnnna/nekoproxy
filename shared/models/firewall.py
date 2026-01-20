@@ -12,6 +12,7 @@ class FirewallRuleBase(BaseModel):
     action: FirewallAction = FirewallAction.BLOCK
     description: Optional[str] = None
     enabled: bool = True
+    agent_id: Optional[int] = None  # NULL = all agents
 
 
 class FirewallRuleCreate(FirewallRuleBase):
@@ -25,6 +26,7 @@ class FirewallRuleUpdate(BaseModel):
     action: Optional[FirewallAction] = None
     description: Optional[str] = None
     enabled: Optional[bool] = None
+    agent_id: Optional[int] = None
 
 
 class FirewallRuleResponse(FirewallRuleBase):

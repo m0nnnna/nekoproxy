@@ -3,8 +3,8 @@ from typing import Optional, List
 from sqlalchemy.orm import Session
 from sqlalchemy import and_, or_
 
-from .models import Agent, Service, ServiceAssignment, BlocklistEntry, ConnectionStat, FirewallRule
-from shared.models.common import HealthStatus, Protocol, FirewallAction
+from .models import Agent, Service, ServiceAssignment, BlocklistEntry, ConnectionStat, FirewallRule, Alert
+from shared.models.common import HealthStatus, Protocol, FirewallAction, AlertSeverity, AlertType
 
 
 class AgentRepository:
@@ -294,14 +294,15 @@ class FirewallRuleRepository:
 
     def create(self, port: int, interface: str, protocol: Protocol = Protocol.TCP,
                action: FirewallAction = FirewallAction.BLOCK, description: Optional[str] = None,
-               enabled: bool = True) -> FirewallRule:
+               enabled: bool = True, agent_id: Optional[int] = None) -> FirewallRule:
         rule = FirewallRule(
             port=port,
             protocol=protocol,
             interface=interface,
             action=action,
             description=description,
-            enabled=enabled
+            enabled=enabled,
+            agent_id=agent_id
         )
         self.db.add(rule)
         self.db.commit()
@@ -316,6 +317,15 @@ class FirewallRuleRepository:
 
     def get_enabled(self) -> List[FirewallRule]:
         return self.db.query(FirewallRule).filter(FirewallRule.enabled == True).all()
+
+    def get_enabled_for_agent(self, agent_id: int) -> List[FirewallRule]:
+        """Get enabled firewall rules for a specific agent (including global rules where agent_id is NULL)."""
+        return self.db.query(FirewallRule).filter(
+            and_(
+                FirewallRule.enabled == True,
+                or_(FirewallRule.agent_id == agent_id, FirewallRule.agent_id == None)
+            )
+        ).all()
 
     def get_by_interface(self, interface: str) -> List[FirewallRule]:
         return self.db.query(FirewallRule).filter(FirewallRule.interface == interface).all()
@@ -346,3 +356,95 @@ class FirewallRuleRepository:
             self.db.commit()
             return True
         return False
+
+
+class AlertRepository:
+    def __init__(self, db: Session):
+        self.db = db
+
+    def create(self, alert_type: AlertType, severity: AlertSeverity, source_ip: str,
+               description: str, port: Optional[int] = None, interface: Optional[str] = None,
+               agent_id: Optional[int] = None) -> Alert:
+        alert = Alert(
+            alert_type=alert_type,
+            severity=severity,
+            source_ip=source_ip,
+            port=port,
+            interface=interface,
+            description=description,
+            agent_id=agent_id,
+            acknowledged=False
+        )
+        self.db.add(alert)
+        self.db.commit()
+        self.db.refresh(alert)
+        return alert
+
+    def get_by_id(self, alert_id: int) -> Optional[Alert]:
+        return self.db.query(Alert).filter(Alert.id == alert_id).first()
+
+    def get_all(self, limit: int = 100) -> List[Alert]:
+        return self.db.query(Alert).order_by(Alert.created_at.desc()).limit(limit).all()
+
+    def get_unacknowledged(self, limit: int = 100) -> List[Alert]:
+        return self.db.query(Alert).filter(
+            Alert.acknowledged == False
+        ).order_by(Alert.created_at.desc()).limit(limit).all()
+
+    def get_by_severity(self, severity: AlertSeverity, limit: int = 100) -> List[Alert]:
+        return self.db.query(Alert).filter(
+            Alert.severity == severity
+        ).order_by(Alert.created_at.desc()).limit(limit).all()
+
+    def get_by_source_ip(self, source_ip: str, limit: int = 100) -> List[Alert]:
+        return self.db.query(Alert).filter(
+            Alert.source_ip == source_ip
+        ).order_by(Alert.created_at.desc()).limit(limit).all()
+
+    def get_recent(self, hours: int = 24, limit: int = 100) -> List[Alert]:
+        cutoff = datetime.utcnow() - timedelta(hours=hours)
+        return self.db.query(Alert).filter(
+            Alert.created_at >= cutoff
+        ).order_by(Alert.created_at.desc()).limit(limit).all()
+
+    def acknowledge(self, alert_id: int) -> Optional[Alert]:
+        alert = self.get_by_id(alert_id)
+        if alert:
+            alert.acknowledged = True
+            self.db.commit()
+            self.db.refresh(alert)
+        return alert
+
+    def acknowledge_all(self) -> int:
+        """Acknowledge all unacknowledged alerts."""
+        count = self.db.query(Alert).filter(
+            Alert.acknowledged == False
+        ).update({"acknowledged": True})
+        self.db.commit()
+        return count
+
+    def delete(self, alert_id: int) -> bool:
+        alert = self.get_by_id(alert_id)
+        if alert:
+            self.db.delete(alert)
+            self.db.commit()
+            return True
+        return False
+
+    def cleanup_old(self, days: int = 30) -> int:
+        """Delete alerts older than specified days."""
+        cutoff = datetime.utcnow() - timedelta(days=days)
+        deleted = self.db.query(Alert).filter(
+            Alert.created_at < cutoff
+        ).delete()
+        self.db.commit()
+        return deleted
+
+    def get_counts_by_severity(self) -> dict:
+        """Get count of unacknowledged alerts by severity."""
+        counts = {}
+        for severity in AlertSeverity:
+            counts[severity.value] = self.db.query(Alert).filter(
+                and_(Alert.severity == severity, Alert.acknowledged == False)
+            ).count()
+        return counts

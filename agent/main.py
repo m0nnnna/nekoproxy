@@ -14,6 +14,8 @@ from agent.core.udp_proxy import UDPProxyManager
 from agent.core.heartbeat import HeartbeatSender
 from agent.core.config_sync import ConfigSync
 from agent.core.stats_reporter import StatsReporter
+from agent.core.firewall import FirewallManager
+from agent.core.control_api import ControlAPI
 from shared.models import AgentConfig, AgentRegistration
 
 # Configure logging
@@ -38,9 +40,13 @@ class NekoProxyAgent:
         self._tcp_manager = TCPProxyManager(on_connection=self._on_connection)
         self._udp_manager = UDPProxyManager(on_connection=self._on_connection)
 
+        # Firewall manager
+        self._firewall_manager = FirewallManager()
+
         # Controller communication
         self._heartbeat: Optional[HeartbeatSender] = None
         self._config_sync: Optional[ConfigSync] = None
+        self._control_api: Optional[ControlAPI] = None
 
     def _on_connection(self, stats):
         """Called when a connection completes."""
@@ -76,10 +82,14 @@ class NekoProxyAgent:
         await self._tcp_manager.sync_proxies(services)
         await self._udp_manager.sync_proxies(services)
 
+        # Sync firewall rules
+        await self._firewall_manager.sync_rules(config.firewall_rules)
+
         logger.info(
             f"Config applied: {len([s for s in services if s['protocol'] == 'tcp'])} TCP services, "
             f"{len([s for s in services if s['protocol'] == 'udp'])} UDP services, "
-            f"{len(config.blocklist)} blocked IPs"
+            f"{len(config.blocklist)} blocked IPs, "
+            f"{len(config.firewall_rules)} firewall rules"
         )
 
     async def register(self) -> bool:
@@ -127,6 +137,9 @@ class NekoProxyAgent:
 
         self._running = True
 
+        # Initialize firewall manager
+        await self._firewall_manager.initialize()
+
         # Initialize stats reporter
         self._stats_reporter = StatsReporter(self.agent_id)
         await self._stats_reporter.start()
@@ -145,6 +158,12 @@ class NekoProxyAgent:
         )
         await self._config_sync.start()
 
+        # Start control API (for receiving push notifications)
+        self._control_api = ControlAPI(
+            trigger_sync=self._config_sync.force_sync
+        )
+        await self._control_api.start()
+
         logger.info("=" * 70)
         logger.info("NekoProxy Agent running. Press Ctrl+C to stop.")
         logger.info("=" * 70)
@@ -159,6 +178,9 @@ class NekoProxyAgent:
         self._running = False
 
         # Stop components in order
+        if self._control_api:
+            await self._control_api.stop()
+
         if self._config_sync:
             await self._config_sync.stop()
 
@@ -167,6 +189,9 @@ class NekoProxyAgent:
 
         await self._tcp_manager.stop_all()
         await self._udp_manager.stop_all()
+
+        # Clean up firewall rules
+        await self._firewall_manager.shutdown()
 
         if self._stats_reporter:
             await self._stats_reporter.stop()

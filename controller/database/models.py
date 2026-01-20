@@ -3,7 +3,7 @@ from sqlalchemy import Column, Integer, String, Boolean, Float, DateTime, Foreig
 from sqlalchemy.orm import relationship
 
 from .database import Base
-from shared.models.common import Protocol, HealthStatus, FirewallAction
+from shared.models.common import Protocol, HealthStatus, FirewallAction, AlertSeverity, AlertType
 
 
 class Agent(Base):
@@ -98,5 +98,27 @@ class FirewallRule(Base):
     action = Column(SQLEnum(FirewallAction), default=FirewallAction.BLOCK)
     description = Column(Text, nullable=True)
     enabled = Column(Boolean, default=True)
+    agent_id = Column(Integer, ForeignKey("agents.id"), nullable=True)  # NULL = all agents
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # Relationships
+    agent = relationship("Agent")
+
+
+class Alert(Base):
+    __tablename__ = "alerts"
+
+    id = Column(Integer, primary_key=True, index=True)
+    alert_type = Column(SQLEnum(AlertType), nullable=False)
+    severity = Column(SQLEnum(AlertSeverity), default=AlertSeverity.MEDIUM)
+    source_ip = Column(String(45), nullable=False, index=True)
+    port = Column(Integer, nullable=True)
+    interface = Column(String(50), nullable=True)
+    description = Column(Text, nullable=False)
+    agent_id = Column(Integer, ForeignKey("agents.id"), nullable=True)
+    acknowledged = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+
+    # Relationships
+    agent = relationship("Agent")

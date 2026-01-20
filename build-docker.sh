@@ -42,7 +42,13 @@ if ! command -v docker &> /dev/null; then
 fi
 
 # Create output directory
+# Handle case where dist might be a file or have wrong permissions
 OUTPUT_DIR="$SCRIPT_DIR/dist/linux"
+if [[ -f "$SCRIPT_DIR/dist" ]]; then
+    rm -f "$SCRIPT_DIR/dist"
+fi
+mkdir -p "$SCRIPT_DIR/dist"
+rm -rf "$OUTPUT_DIR" 2>/dev/null || true
 mkdir -p "$OUTPUT_DIR"
 
 # Build Docker image

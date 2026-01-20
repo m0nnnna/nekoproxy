@@ -26,6 +26,9 @@ class AgentSettings(BaseSettings):
     # Heartbeat
     heartbeat_interval: int = 30
 
+    # Control API (for receiving push notifications from controller)
+    api_port: int = 8002
+
     # Stats reporting
     stats_batch_size: int = 100
     stats_report_interval: int = 60

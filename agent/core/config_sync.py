@@ -69,6 +69,23 @@ class ConfigSync:
             logger.error(f"Error parsing config: {e}")
             return None
 
+    async def force_sync(self):
+        """Force an immediate config sync, ignoring version check."""
+        logger.info("Forcing immediate config sync")
+        try:
+            config = await self.fetch_config()
+            if config:
+                logger.info(f"Force sync: applying config version {config.config_version}")
+                self._current_version = config.config_version
+                self.on_config_update(config)
+                return True
+            else:
+                logger.error("Force sync: failed to fetch config")
+                return False
+        except Exception as e:
+            logger.error(f"Force sync error: {e}")
+            return False
+
     async def _sync_loop(self):
         """Main sync loop - poll for config changes."""
         # Fetch initial config
@@ -83,7 +100,7 @@ class ConfigSync:
 
             try:
                 config = await self.fetch_config()
-                if config and config.config_version > self._current_version:
+                if config and config.config_version != self._current_version:
                     logger.info(
                         f"Config updated: version {self._current_version} -> {config.config_version}"
                     )

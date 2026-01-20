@@ -113,9 +113,18 @@ clean_build() {
     echo "Clean complete."
 }
 
+# Ensure dist directory exists and is a directory (not a file)
+ensure_dist_dir() {
+    if [[ -f "$SCRIPT_DIR/dist" ]]; then
+        rm -f "$SCRIPT_DIR/dist"
+    fi
+    mkdir -p "$SCRIPT_DIR/dist/linux"
+}
+
 # Build agent
 build_agent() {
     print_header "Building Agent for Linux..."
+    ensure_dist_dir
 
     python -m PyInstaller \
         --clean \
@@ -139,6 +148,7 @@ build_agent() {
 # Build controller
 build_controller() {
     print_header "Building Controller for Linux..."
+    ensure_dist_dir
 
     python -m PyInstaller \
         --clean \

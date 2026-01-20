@@ -28,8 +28,11 @@ RUN pip install --upgrade pip && \
 # Copy source code
 COPY . .
 
-# Build script
+# Convert all shell scripts from CRLF to LF (Windows compatibility)
+RUN find . -name "*.sh" -type f -exec sed -i 's/\r$//' {} \;
+
+# Build script - convert CRLF to LF for Windows compatibility
 COPY build/docker-build.sh /docker-build.sh
-RUN chmod +x /docker-build.sh
+RUN sed -i 's/\r$//' /docker-build.sh && chmod +x /docker-build.sh
 
 ENTRYPOINT ["/docker-build.sh"]

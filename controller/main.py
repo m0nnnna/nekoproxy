@@ -7,7 +7,7 @@ from fastapi.templating import Jinja2Templates
 
 from controller.config import settings
 from controller.database.database import engine, Base
-from controller.api.v1 import agents, services, assignments, stats, blocklist, firewall
+from controller.api.v1 import agents, services, assignments, stats, blocklist, firewall, alerts
 from controller.web import routes as web_routes
 from controller.core.health_monitor import HealthMonitor
 
@@ -65,6 +65,7 @@ app.include_router(assignments.router, prefix="/api/v1/assignments", tags=["assi
 app.include_router(stats.router, prefix="/api/v1/stats", tags=["stats"])
 app.include_router(blocklist.router, prefix="/api/v1/blocklist", tags=["blocklist"])
 app.include_router(firewall.router, prefix="/api/v1/firewall", tags=["firewall"])
+app.include_router(alerts.router, prefix="/api/v1/alerts", tags=["alerts"])
 
 # Include web routes
 app.include_router(web_routes.router, tags=["web"])

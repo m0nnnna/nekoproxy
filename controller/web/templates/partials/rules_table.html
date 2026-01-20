@@ -1,0 +1,66 @@
+{% for rule in rules %}
+<tr id="rule-{{ rule.assignment.id }}">
+    <td class="px-6 py-4 whitespace-nowrap">
+        {% if rule.assignment.enabled %}
+        <button hx-post="/rules/{{ rule.assignment.id }}/toggle"
+                hx-target="#rules-table"
+                hx-swap="innerHTML"
+                class="relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent bg-green-500 transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2"
+                title="Click to disable">
+            <span class="translate-x-5 inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out"></span>
+        </button>
+        {% else %}
+        <button hx-post="/rules/{{ rule.assignment.id }}/toggle"
+                hx-target="#rules-table"
+                hx-swap="innerHTML"
+                class="relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent bg-gray-200 transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+                title="Click to enable">
+            <span class="translate-x-0 inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out"></span>
+        </button>
+        {% endif %}
+    </td>
+    <td class="px-6 py-4 whitespace-nowrap">
+        <div class="text-sm font-medium text-gray-900">{{ rule.service.name }}</div>
+        {% if rule.service.description %}
+        <div class="text-xs text-gray-500">{{ rule.service.description }}</div>
+        {% endif %}
+    </td>
+    <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-blue-600">
+        :{{ rule.service.listen_port }}
+    </td>
+    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+        {{ rule.service.backend_host }}:{{ rule.service.backend_port }}
+    </td>
+    <td class="px-6 py-4 whitespace-nowrap">
+        <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full
+            {% if rule.service.protocol.value == 'tcp' %}bg-blue-100 text-blue-800{% else %}bg-purple-100 text-purple-800{% endif %}">
+            {{ rule.service.protocol.value.upper() }}
+        </span>
+    </td>
+    <td class="px-6 py-4 whitespace-nowrap">
+        {% if rule.assignment.agent %}
+        <div class="text-sm text-gray-900">{{ rule.assignment.agent.hostname }}</div>
+        <div class="text-xs text-gray-500">{{ rule.assignment.agent.wireguard_ip }}</div>
+        {% else %}
+        <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-purple-100 text-purple-800">
+            All Agents
+        </span>
+        {% endif %}
+    </td>
+    <td class="px-6 py-4 whitespace-nowrap text-sm">
+        <button hx-delete="/rules/{{ rule.assignment.id }}"
+                hx-target="#rule-{{ rule.assignment.id }}"
+                hx-swap="outerHTML"
+                hx-confirm="Delete this rule? The service definition will also be removed if this is the only assignment."
+                class="text-red-600 hover:text-red-900">
+            Delete
+        </button>
+    </td>
+</tr>
+{% else %}
+<tr>
+    <td colspan="7" class="px-6 py-4 text-center text-sm text-gray-500">
+        No proxy rules defined. Create a rule above to start forwarding traffic.
+    </td>
+</tr>
+{% endfor %}

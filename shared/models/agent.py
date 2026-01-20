@@ -4,6 +4,7 @@ from pydantic import BaseModel, Field
 
 from .common import HealthStatus
 from .service import ServiceResponse
+from .firewall import FirewallRuleResponse
 
 
 class AgentRegistration(BaseModel):
@@ -29,6 +30,7 @@ class AgentConfig(BaseModel):
     config_version: int = 1
     services: List[ServiceResponse] = Field(default_factory=list)  # Services assigned to this agent
     blocklist: List[str] = Field(default_factory=list)
+    firewall_rules: List[FirewallRuleResponse] = Field(default_factory=list)  # Firewall rules for this agent
     heartbeat_interval: int = 30
 
 

@@ -1,0 +1,65 @@
+{% for item in alerts %}
+<tr class="{% if not item.alert.acknowledged %}bg-red-50{% endif %}">
+    <td class="px-6 py-4 whitespace-nowrap">
+        {% if item.alert.severity.value == 'critical' %}
+        <span class="px-2 py-1 text-xs font-medium rounded-full bg-red-100 text-red-800">CRITICAL</span>
+        {% elif item.alert.severity.value == 'high' %}
+        <span class="px-2 py-1 text-xs font-medium rounded-full bg-orange-100 text-orange-800">HIGH</span>
+        {% elif item.alert.severity.value == 'medium' %}
+        <span class="px-2 py-1 text-xs font-medium rounded-full bg-yellow-100 text-yellow-800">MEDIUM</span>
+        {% else %}
+        <span class="px-2 py-1 text-xs font-medium rounded-full bg-blue-100 text-blue-800">LOW</span>
+        {% endif %}
+    </td>
+    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+        {{ item.alert.alert_type.value | replace('_', ' ') | title }}
+    </td>
+    <td class="px-6 py-4 whitespace-nowrap text-sm font-mono text-gray-900">
+        {{ item.alert.source_ip }}
+    </td>
+    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+        {{ item.alert.port or '-' }}
+    </td>
+    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+        {{ item.alert.interface or '-' }}
+    </td>
+    <td class="px-6 py-4 text-sm text-gray-500 max-w-xs truncate" title="{{ item.alert.description }}">
+        {{ item.alert.description }}
+    </td>
+    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+        {{ item.agent_hostname or '-' }}
+    </td>
+    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+        {{ item.alert.created_at.strftime('%Y-%m-%d %H:%M') }}
+    </td>
+    <td class="px-6 py-4 whitespace-nowrap text-sm">
+        <div class="flex space-x-2">
+            {% if not item.alert.acknowledged %}
+            <button hx-post="/alerts/{{ item.alert.id }}/acknowledge" hx-target="#alerts-table" hx-swap="innerHTML"
+                    class="text-green-600 hover:text-green-900" title="Acknowledge">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                </svg>
+            </button>
+            {% else %}
+            <span class="text-gray-400" title="Acknowledged">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                </svg>
+            </span>
+            {% endif %}
+            <button hx-delete="/alerts/{{ item.alert.id }}" hx-target="closest tr" hx-swap="outerHTML"
+                    hx-confirm="Delete this alert?"
+                    class="text-red-600 hover:text-red-900" title="Delete">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
+                </svg>
+            </button>
+        </div>
+    </td>
+</tr>
+{% else %}
+<tr>
+    <td colspan="9" class="px-6 py-4 text-center text-gray-500">No alerts</td>
+</tr>
+{% endfor %}
