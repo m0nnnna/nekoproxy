@@ -16,7 +16,8 @@ logger = logging.getLogger(__name__)
 @dataclass
 class PostfixConfig:
     """Postfix configuration parameters."""
-    mailcow_host: str
+    hostname: str  # FQDN for Postfix and SSL certs (e.g., mail.example.com)
+    mailcow_ip: str  # Mailcow's WireGuard/internal IP for transport
     mailcow_port: int
     proxy_ip: str
 
@@ -35,29 +36,32 @@ class EmailProxyManager:
     def is_deployed(self) -> bool:
         return self._deployed
 
-    async def deploy(self, mailcow_host: str, mailcow_port: int, proxy_ip: str) -> Tuple[bool, Optional[str]]:
-        """Install and configure Postfix + rspamd + SASL.
+    async def deploy(self, hostname: str, mailcow_ip: str, mailcow_port: int, proxy_ip: str) -> Tuple[bool, Optional[str]]:
+        """Install and configure Postfix + SASL (no rspamd - mailcow handles filtering).
 
         Args:
-            mailcow_host: Mailcow server hostname/IP
-            mailcow_port: Mailcow SMTP port
+            hostname: FQDN for this proxy (for Postfix myhostname and SSL certs)
+            mailcow_ip: Mailcow's WireGuard/internal IP for transport routing
+            mailcow_port: Mailcow SMTP port (usually 25)
             proxy_ip: This proxy's public IP for header stamping
 
         Returns:
             Tuple of (success, error_message)
         """
         logger.info("Starting email proxy deployment...")
-        logger.info(f"  Mailcow: {mailcow_host}:{mailcow_port}")
+        logger.info(f"  Hostname: {hostname}")
+        logger.info(f"  Mailcow IP: {mailcow_ip}:{mailcow_port}")
         logger.info(f"  Proxy IP: {proxy_ip}")
 
         self._postfix_config = PostfixConfig(
-            mailcow_host=mailcow_host,
+            hostname=hostname,
+            mailcow_ip=mailcow_ip,
             mailcow_port=mailcow_port,
             proxy_ip=proxy_ip
         )
 
-        # Get hostname for SASL realm (must match smtpd_sasl_local_domain)
-        self._hostname = socket.gethostname()
+        # Use the provided hostname for SASL realm (must match smtpd_sasl_local_domain)
+        self._hostname = hostname
 
         try:
             # Install packages
@@ -66,25 +70,39 @@ class EmailProxyManager:
             except Exception as e:
                 raise Exception(f"Package installation failed: {e}")
 
+            # Obtain SSL certificate via certbot
+            # WARNING: DNS must be configured for this hostname before running!
+            logger.warning("=" * 60)
+            logger.warning("IMPORTANT: Ensure DNS A record for %s points to this server!", hostname)
+            logger.warning("SSL certificate generation will fail without proper DNS setup.")
+            logger.warning("=" * 60)
+            try:
+                await self._obtain_ssl_cert()
+            except Exception as e:
+                error_msg = f"SSL certificate generation failed: {e}"
+                logger.error(error_msg)
+                logger.error("=" * 60)
+                logger.error("MANUAL INTERVENTION REQUIRED:")
+                logger.error("1. Ensure DNS A record for %s points to this server's public IP", hostname)
+                logger.error("2. Run: certbot certonly --standalone -d %s", hostname)
+                logger.error("3. Fix permissions: chmod 755 /etc/letsencrypt/live/ /etc/letsencrypt/archive/")
+                logger.error("4. Restart postfix: systemctl restart postfix")
+                logger.error("=" * 60)
+                return False, error_msg
+
             # Configure SASL
             try:
                 await self._configure_sasl()
             except Exception as e:
                 raise Exception(f"SASL configuration failed: {e}")
 
-            # Configure Postfix
+            # Configure Postfix (no rspamd - mailcow handles filtering)
             try:
                 await self._configure_postfix()
             except Exception as e:
                 raise Exception(f"Postfix configuration failed: {e}")
 
-            # Configure rspamd
-            try:
-                await self._configure_rspamd()
-            except Exception as e:
-                raise Exception(f"rspamd configuration failed: {e}")
-
-            # Start services
+            # Start services (only postfix, no rspamd)
             try:
                 await self._start_services()
             except Exception as e:
@@ -118,8 +136,8 @@ class EmailProxyManager:
         return proc.returncode, stdout.decode(), stderr.decode()
 
     async def _install_packages(self):
-        """Install Postfix, rspamd, and SASL packages."""
-        logger.info("Installing Postfix, rspamd, and SASL packages...")
+        """Install Postfix, SASL, and certbot packages (no rspamd - mailcow handles filtering)."""
+        logger.info("Installing Postfix, SASL, and certbot packages...")
 
         # Set non-interactive frontend for apt
         env = os.environ.copy()
@@ -143,11 +161,13 @@ class EmailProxyManager:
         # Update package lists
         await self._run_command("apt-get", "update")
 
-        # Install packages including SASL
+        # Install packages: postfix, SASL, and certbot for SSL certs
+        # No rspamd - mailcow handles filtering
         proc = await asyncio.create_subprocess_exec(
             "apt-get", "install", "-y",
-            "postfix", "rspamd", "redis-server",
+            "postfix",
             "sasl2-bin", "libsasl2-modules",
+            "certbot",
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             env=env
@@ -158,6 +178,70 @@ class EmailProxyManager:
             raise Exception(f"Failed to install packages: {stderr.decode()}")
 
         logger.info("Packages installed successfully")
+
+    async def _obtain_ssl_cert(self):
+        """Obtain Let's Encrypt SSL certificate via certbot.
+
+        Requires DNS A record for hostname to point to this server's public IP.
+        """
+        if not self._postfix_config:
+            raise Exception("PostfixConfig not set")
+
+        hostname = self._postfix_config.hostname
+        cert_path = f"/etc/letsencrypt/live/{hostname}/fullchain.pem"
+
+        # Check if cert already exists and is valid
+        if os.path.exists(cert_path):
+            logger.info(f"SSL certificate already exists for {hostname}")
+            # Fix permissions just in case
+            await self._fix_cert_permissions()
+            return
+
+        logger.info(f"Obtaining SSL certificate for {hostname}...")
+
+        # Stop any services that might be using port 80
+        await self._run_command("systemctl", "stop", "nginx", check=False)
+        await self._run_command("systemctl", "stop", "apache2", check=False)
+
+        # Run certbot in standalone mode
+        proc = await asyncio.create_subprocess_exec(
+            "certbot", "certonly",
+            "--standalone",
+            "--non-interactive",
+            "--agree-tos",
+            "--email", f"admin@{hostname.split('.', 1)[-1] if '.' in hostname else hostname}",
+            "-d", hostname,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+        stdout, stderr = await proc.communicate()
+
+        if proc.returncode != 0:
+            error_output = stderr.decode() if stderr else stdout.decode()
+            raise Exception(f"certbot failed: {error_output}")
+
+        logger.info(f"SSL certificate obtained for {hostname}")
+
+        # Fix permissions for Postfix to read certs
+        await self._fix_cert_permissions()
+
+    async def _fix_cert_permissions(self):
+        """Fix Let's Encrypt directory permissions for Postfix access."""
+        if not self._postfix_config:
+            return
+
+        # Make live and archive directories readable
+        for path in ["/etc/letsencrypt/live", "/etc/letsencrypt/archive"]:
+            if os.path.exists(path):
+                os.chmod(path, 0o755)
+
+        hostname = self._postfix_config.hostname
+        for base in ["/etc/letsencrypt/live", "/etc/letsencrypt/archive"]:
+            host_path = os.path.join(base, hostname)
+            if os.path.exists(host_path):
+                os.chmod(host_path, 0o755)
+
+        logger.info("SSL certificate permissions fixed")
 
     async def _configure_sasl(self):
         """Configure SASL authentication for Postfix using auxprop/sasldb.
@@ -185,43 +269,55 @@ sasldb_path: /etc/sasldb2
         logger.info("SASL configured with auxprop/sasldb")
 
     async def _configure_postfix(self):
-        """Configure Postfix as relay with SASL auth and IP stamping."""
+        """Configure Postfix as mail relay with SASL auth, Let's Encrypt TLS, and proper routing.
+
+        Key design:
+        - Outbound: Delivers directly to destination MX (no relayhost)
+        - Inbound: Routes mail for relay_domains to Mailcow via transport_maps
+        - No milters: Mailcow handles all filtering
+        """
         if not self._postfix_config:
             raise Exception("PostfixConfig not set")
 
         logger.info("Configuring Postfix...")
 
         config = self._postfix_config
-        hostname = self._hostname
+        hostname = config.hostname
 
-        # Main configuration with SASL authentication
+        # Main configuration matching proven working setup
         main_cf = f"""# NekoProxy Email Relay Configuration
 # Automatically managed - do not edit manually
 
+# Basic settings
 smtpd_banner = $myhostname ESMTP
 biff = no
 append_dot_mydomain = no
+compatibility_level = 2
 
-# TLS parameters
-smtpd_tls_cert_file=/etc/ssl/certs/ssl-cert-snakeoil.pem
-smtpd_tls_key_file=/etc/ssl/private/ssl-cert-snakeoil.key
-smtpd_tls_security_level=may
-smtp_tls_security_level=may
+# TLS parameters - Let's Encrypt certificates
+smtpd_tls_cert_file = /etc/letsencrypt/live/{hostname}/fullchain.pem
+smtpd_tls_key_file = /etc/letsencrypt/live/{hostname}/privkey.pem
+smtpd_tls_security_level = may
+smtpd_tls_auth_only = yes
+smtp_tls_CApath = /etc/ssl/certs
+smtp_tls_security_level = may
+smtp_tls_session_cache_database = btree:${{data_directory}}/smtp_scache
 
 # Network settings
 myhostname = {hostname}
 myorigin = $myhostname
 mydestination =
-mynetworks = 127.0.0.0/8 [::ffff:127.0.0.0]/104 [::1]/128
+mynetworks = 127.0.0.0/8, {config.mailcow_ip}
 inet_interfaces = all
 inet_protocols = ipv4
 
-# Relay to Mailcow
-relayhost = [{config.mailcow_host}]:{config.mailcow_port}
-smtp_host_lookup = native
+# NO relayhost - deliver directly to internet for outbound
+relayhost =
 
-# Relay domains (will be managed dynamically)
+# Relay configuration - inbound mail for domains routes to Mailcow
 relay_domains = hash:/etc/postfix/relay_domains
+transport_maps = hash:/etc/postfix/transport
+relay_recipient_maps = hash:/etc/postfix/relay_recipients
 
 # SASL Authentication
 cyrus_sasl_config_path = /etc/postfix/sasl
@@ -231,30 +327,33 @@ smtpd_sasl_security_options = noanonymous
 smtpd_sasl_local_domain = $myhostname
 broken_sasl_auth_clients = yes
 
-# Sender restrictions - check SASL auth first
+# Restrictions
+smtpd_helo_required = yes
+
+smtpd_relay_restrictions =
+    permit_sasl_authenticated,
+    permit_mynetworks,
+    reject_unauth_destination
+
+smtpd_recipient_restrictions =
+    permit_sasl_authenticated,
+    permit_mynetworks,
+    reject_unauth_destination
+
 smtpd_sender_restrictions =
     permit_sasl_authenticated,
-    check_sender_access hash:/etc/postfix/sender_access,
     reject_unknown_sender_domain
 
-# Relay restrictions - require SASL auth for relay
-smtpd_relay_restrictions =
-    permit_mynetworks,
-    permit_sasl_authenticated,
-    reject_unauth_destination
+# NO milters - mailcow handles filtering
+smtpd_milters =
+non_smtpd_milters =
 
-# Recipient restrictions
-smtpd_recipient_restrictions =
-    permit_mynetworks,
-    permit_sasl_authenticated,
-    check_sender_access hash:/etc/postfix/sender_access,
-    reject_unauth_destination
-
-# Content filtering via rspamd
-milter_protocol = 6
-milter_default_action = accept
-smtpd_milters = inet:localhost:11332
-non_smtpd_milters = $smtpd_milters
+# Bounce handling - prevent double-bounce loops
+soft_bounce = no
+notify_classes = resource, software
+bounce_queue_lifetime = 0
+maximal_queue_lifetime = 1d
+2bounce_notice_recipient = postmaster
 
 # IP stamping - ensure proxy IP is in headers
 always_add_missing_headers = yes
@@ -282,11 +381,24 @@ maillog_file = /var/log/mail.log
         with open("/etc/postfix/relay_domains", "w") as f:
             f.write("# Relay domains - managed by NekoProxy\n")
 
-        # Compile the maps
+        # Initial empty transport map (routes domains to mailcow)
+        with open("/etc/postfix/transport", "w") as f:
+            f.write("# Transport map - managed by NekoProxy\n")
+
+        # Initial empty relay recipients map
+        with open("/etc/postfix/relay_recipients", "w") as f:
+            f.write("# Relay recipients - managed by NekoProxy\n")
+
+        # Compile all maps
         await self._run_command("postmap", "/etc/postfix/sender_access")
         await self._run_command("postmap", "/etc/postfix/relay_domains")
+        await self._run_command("postmap", "/etc/postfix/transport")
+        await self._run_command("postmap", "/etc/postfix/relay_recipients")
 
-        logger.info("Postfix configured with SASL support")
+        # Validate configuration
+        await self._run_command("postfix", "check")
+
+        logger.info("Postfix configured with Let's Encrypt TLS and SASL support")
 
     async def _configure_rspamd(self):
         """Configure rspamd for spam filtering and blocklists."""
@@ -314,14 +426,13 @@ options {
         logger.info("rspamd configured")
 
     async def _start_services(self):
-        """Start and enable services."""
-        logger.info("Starting services...")
+        """Start and enable Postfix service (no rspamd - mailcow handles filtering)."""
+        logger.info("Starting Postfix service...")
 
-        for service in ["redis-server", "rspamd", "postfix"]:
-            await self._run_command("systemctl", "enable", service, check=False)
-            await self._run_command("systemctl", "start", service, check=False)
+        await self._run_command("systemctl", "enable", "postfix", check=False)
+        await self._run_command("systemctl", "restart", "postfix", check=False)
 
-        logger.info("Services started")
+        logger.info("Postfix service started")
 
     async def apply_config(self, config: AgentEmailConfig):
         """Apply email configuration updates.
@@ -349,17 +460,12 @@ options {
         # Update SASL users
         await self._update_sasl_users(config.sasl_users)
 
-        # Update relay domains
+        # Update relay domains (also updates transport and relay_recipients maps)
         await self._update_relay_domains(config.relay_domains)
 
-        # Update blocklists in rspamd
-        await self._update_blocklists(
-            config.blocklist_addresses,
-            config.blocklist_domains,
-            config.blocklist_ips
-        )
+        # Note: No blocklist updates - mailcow handles all filtering
 
-        # Reload services
+        # Reload Postfix to apply changes
         await self._reload_services()
 
         self._current_config = config
@@ -367,8 +473,7 @@ options {
 
         logger.info(f"Email config applied: {len(config.authorized_senders)} authorized senders, "
                     f"{len(config.sasl_users)} SASL users, "
-                    f"{len(config.relay_domains)} relay domains, "
-                    f"{len(config.blocklist_addresses)} blocked addresses")
+                    f"{len(config.relay_domains)} relay domains")
 
     async def _update_sender_access(self, authorized_senders: List[str]):
         """Update Postfix sender access map."""
@@ -428,16 +533,50 @@ options {
             logger.info(f"Copied sasldb to chroot: {chroot_sasldb_path}")
 
     async def _update_relay_domains(self, relay_domains: List[str]):
-        """Update Postfix relay domains map."""
-        content = "# Relay domains - managed by NekoProxy\n"
+        """Update Postfix relay domains, transport, and relay_recipients maps.
+
+        For each domain:
+        - relay_domains: domain OK (accept mail for this domain)
+        - transport: domain smtp:[mailcow_ip]:port (route to mailcow)
+        - relay_recipients: @domain OK (accept all recipients at domain)
+        """
+        if not self._postfix_config:
+            logger.warning("PostfixConfig not set, cannot update relay domains")
+            return
+
+        mailcow_ip = self._postfix_config.mailcow_ip
+        mailcow_port = self._postfix_config.mailcow_port
+
+        # relay_domains map
+        relay_content = "# Relay domains - managed by NekoProxy\n"
         for domain in relay_domains:
-            content += f"{domain} OK\n"
+            relay_content += f"{domain}    OK\n"
 
         with open("/etc/postfix/relay_domains", "w") as f:
-            f.write(content)
+            f.write(relay_content)
 
+        # transport map - routes inbound mail for domains to mailcow
+        transport_content = "# Transport map - managed by NekoProxy\n"
+        for domain in relay_domains:
+            transport_content += f"{domain}    smtp:[{mailcow_ip}]:{mailcow_port}\n"
+
+        with open("/etc/postfix/transport", "w") as f:
+            f.write(transport_content)
+
+        # relay_recipients map - accept all recipients at relay domains
+        recipients_content = "# Relay recipients - managed by NekoProxy\n"
+        for domain in relay_domains:
+            recipients_content += f"@{domain}    OK\n"
+
+        with open("/etc/postfix/relay_recipients", "w") as f:
+            f.write(recipients_content)
+
+        # Compile all maps
         await self._run_command("postmap", "/etc/postfix/relay_domains")
-        logger.debug(f"Updated {len(relay_domains)} relay domains")
+        await self._run_command("postmap", "/etc/postfix/transport")
+        await self._run_command("postmap", "/etc/postfix/relay_recipients")
+
+        logger.info(f"Updated {len(relay_domains)} relay domains with transport and recipient maps")
 
     async def _update_blocklists(self, addresses: List[str], domains: List[str], ips: List[str]):
         """Update rspamd blocklists."""
@@ -482,9 +621,8 @@ BLOCKED_IPS {
             f.write("\n".join(ips))
 
     async def _reload_services(self):
-        """Reload Postfix and rspamd to apply changes."""
+        """Reload Postfix to apply changes (no rspamd - mailcow handles filtering)."""
         await self._run_command("postfix", "reload", check=False)
-        await self._run_command("systemctl", "reload", "rspamd", check=False)
 
     async def delete_sasl_user(self, username: str) -> bool:
         """Delete a SASL user from the database."""

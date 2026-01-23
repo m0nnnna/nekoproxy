@@ -42,7 +42,7 @@ class EmailManager:
         self.alias_repo = MailcowAliasRepository(db)
 
     async def deploy_to_agent(self, agent_id: int) -> Tuple[bool, str]:
-        """Deploy Postfix + rspamd + SASL to an agent.
+        """Deploy Postfix + SASL to an agent (no rspamd - mailcow handles filtering).
 
         Returns:
             Tuple of (success: bool, message: str)
@@ -64,13 +64,24 @@ class EmailManager:
             # Trigger deployment on agent via control API
             url = f"http://{agent.wireguard_ip}:8002/deploy-email"
 
+            # Deploy configuration:
+            # - hostname: Agent's FQDN (for Postfix myhostname and Let's Encrypt SSL)
+            # - mailcow_ip: Mailcow's internal IP from config (for transport routing)
+            # - mailcow_port: Mailcow SMTP port
+            # - proxy_ip: Agent's public IP for header stamping
             deploy_config = {
-                "mailcow_host": config.mailcow_host,
+                "hostname": agent.hostname,
+                "mailcow_ip": config.mailcow_host,  # User configures this as Mailcow's internal/WireGuard IP
                 "mailcow_port": config.mailcow_port,
                 "proxy_ip": agent.public_ip or agent.wireguard_ip,
             }
 
-            async with httpx.AsyncClient(timeout=300.0) as client:  # 5 min timeout for deployment
+            logger.info(f"Deploying email proxy to {agent.hostname}")
+            logger.info(f"  Hostname (for SSL): {deploy_config['hostname']}")
+            logger.info(f"  Mailcow IP: {deploy_config['mailcow_ip']}:{deploy_config['mailcow_port']}")
+            logger.info(f"  Proxy IP: {deploy_config['proxy_ip']}")
+
+            async with httpx.AsyncClient(timeout=600.0) as client:  # 10 min timeout for SSL cert generation
                 response = await client.post(url, json=deploy_config)
                 response.raise_for_status()
 
@@ -81,7 +92,7 @@ class EmailManager:
         except httpx.TimeoutException:
             logger.error(f"Timeout deploying email proxy to agent {agent.hostname}")
             self.config_repo.update_deployment_status(config.id, EmailDeploymentStatus.FAILED)
-            return False, "Deployment timed out"
+            return False, "Deployment timed out (SSL certificate generation may have failed - check DNS)"
         except httpx.HTTPStatusError as e:
             # Try to extract error message from agent response
             error_message = f"HTTP error: {e.response.status_code}"

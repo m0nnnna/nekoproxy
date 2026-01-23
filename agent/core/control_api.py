@@ -22,7 +22,7 @@ class ControlAPI:
     def __init__(
         self,
         trigger_sync: Callable[[], asyncio.Future],
-        deploy_email: Optional[Callable[[str, int, str], asyncio.Future]] = None,
+        deploy_email: Optional[Callable[[str, str, int, str], asyncio.Future]] = None,
         trigger_email_sync: Optional[Callable[[], asyncio.Future]] = None
     ):
         """
@@ -30,7 +30,7 @@ class ControlAPI:
 
         Args:
             trigger_sync: Callback to trigger immediate config sync
-            deploy_email: Callback to deploy email proxy (mailcow_host, mailcow_port, proxy_ip)
+            deploy_email: Callback to deploy email proxy (hostname, mailcow_ip, mailcow_port, proxy_ip)
             trigger_email_sync: Callback to trigger email config sync
         """
         self.trigger_sync = trigger_sync
@@ -105,17 +105,18 @@ class ControlAPI:
         logger.info("Received email proxy deployment request")
         try:
             data = await request.json()
-            mailcow_host = data.get("mailcow_host")
+            hostname = data.get("hostname")
+            mailcow_ip = data.get("mailcow_ip")
             mailcow_port = data.get("mailcow_port", 25)
             proxy_ip = data.get("proxy_ip")
 
-            if not mailcow_host or not proxy_ip:
+            if not hostname or not mailcow_ip or not proxy_ip:
                 return web.json_response(
-                    {"status": "error", "message": "Missing required fields: mailcow_host, proxy_ip"},
+                    {"status": "error", "message": "Missing required fields: hostname, mailcow_ip, proxy_ip"},
                     status=400
                 )
 
-            result = await self.deploy_email(mailcow_host, mailcow_port, proxy_ip)
+            result = await self.deploy_email(hostname, mailcow_ip, mailcow_port, proxy_ip)
             # Handle both tuple (success, error_msg) and bool return values
             if isinstance(result, tuple):
                 success, error_msg = result

@@ -100,15 +100,21 @@ class NekoProxyAgent:
             f"{len(config.firewall_rules)} firewall rules"
         )
 
-    async def _deploy_email(self, mailcow_host: str, mailcow_port: int, proxy_ip: str) -> tuple:
-        """Deploy email proxy (Postfix + rspamd).
+    async def _deploy_email(self, hostname: str, mailcow_ip: str, mailcow_port: int, proxy_ip: str) -> tuple:
+        """Deploy email proxy (Postfix + SASL, no rspamd - mailcow handles filtering).
 
         Called by ControlAPI when controller requests deployment.
+
+        Args:
+            hostname: FQDN for Postfix myhostname and Let's Encrypt SSL cert
+            mailcow_ip: Mailcow's internal/WireGuard IP for transport routing
+            mailcow_port: Mailcow SMTP port
+            proxy_ip: This agent's public IP for header stamping
 
         Returns:
             Tuple of (success: bool, error_message: str or None)
         """
-        return await self._email_manager.deploy(mailcow_host, mailcow_port, proxy_ip)
+        return await self._email_manager.deploy(hostname, mailcow_ip, mailcow_port, proxy_ip)
 
     async def _trigger_email_sync(self):
         """Trigger email configuration sync from controller.
