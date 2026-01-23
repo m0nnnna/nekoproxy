@@ -1,0 +1,35 @@
+{% for item in deployments %}
+<tr>
+    <td class="px-4 py-2 whitespace-nowrap text-sm font-medium text-gray-900">
+        {{ item.agent_hostname or 'Global' }}
+    </td>
+    <td class="px-4 py-2 whitespace-nowrap text-sm text-gray-500">
+        {{ item.mailcow_host }}:{{ item.mailcow_port }}
+    </td>
+    <td class="px-4 py-2 whitespace-nowrap text-sm">
+        {% if item.deployment_status == 'deployed' %}
+        <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">
+            Deployed
+        </span>
+        {% elif item.deployment_status == 'deploying' %}
+        <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-yellow-100 text-yellow-800">
+            Deploying...
+        </span>
+        {% elif item.deployment_status == 'failed' %}
+        <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-red-100 text-red-800">
+            Failed
+        </span>
+        {% else %}
+        <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-gray-100 text-gray-800">
+            Not Deployed
+        </span>
+        {% endif %}
+    </td>
+</tr>
+{% else %}
+<tr>
+    <td colspan="3" class="px-4 py-4 text-center text-sm text-gray-500">
+        No email configurations. Add a configuration above.
+    </td>
+</tr>
+{% endfor %}

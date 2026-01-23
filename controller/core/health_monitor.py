@@ -9,6 +9,9 @@ from shared.models.common import HealthStatus
 
 logger = logging.getLogger(__name__)
 
+# Interval for Mailcow sync (1 hour)
+MAILCOW_SYNC_INTERVAL = timedelta(hours=1)
+
 
 class HealthMonitor:
     """Background task that monitors agent health and cleans up old stats."""
@@ -40,6 +43,7 @@ class HealthMonitor:
             try:
                 await self._check_agents()
                 await self._cleanup_stats()
+                await self._sync_mailcow()
             except Exception as e:
                 logger.error(f"Error in health monitor: {e}")
 
@@ -88,5 +92,33 @@ class HealthMonitor:
             if deleted > 0:
                 logger.info(f"Cleaned up {deleted} old connection stats")
             self._last_cleanup = datetime.utcnow()
+        finally:
+            db.close()
+
+    async def _sync_mailcow(self):
+        """Sync data from Mailcow API periodically."""
+        if not hasattr(self, '_last_mailcow_sync'):
+            self._last_mailcow_sync = datetime.min  # Force initial sync
+
+        if datetime.utcnow() - self._last_mailcow_sync < MAILCOW_SYNC_INTERVAL:
+            return
+
+        db = SessionLocal()
+        try:
+            from controller.core.email_manager import EmailManager
+            email_manager = EmailManager(db)
+
+            # Check if Mailcow API is configured
+            config = email_manager.config_repo.get_global()
+            if not config or not config.mailcow_api_url or not config.mailcow_api_key:
+                return  # Silently skip if not configured
+
+            logger.info("Starting scheduled Mailcow sync...")
+            results = await email_manager.sync_all_mailcow_data()
+            logger.info(f"Mailcow sync complete: {results['domains']} domains, "
+                       f"{results['mailboxes']} mailboxes, {results['aliases']} aliases")
+            self._last_mailcow_sync = datetime.utcnow()
+        except Exception as e:
+            logger.error(f"Error syncing Mailcow data: {e}")
         finally:
             db.close()

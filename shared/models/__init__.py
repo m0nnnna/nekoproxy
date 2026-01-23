@@ -4,7 +4,15 @@ from .assignment import ServiceAssignmentCreate, ServiceAssignmentUpdate, Servic
 from .firewall import FirewallRuleCreate, FirewallRuleUpdate, FirewallRuleResponse
 from .alert import AlertCreate, AlertResponse
 from .stats import ConnectionStats, StatsReport
-from .common import Protocol, HealthStatus, FirewallAction, AlertSeverity, AlertType
+from .common import Protocol, HealthStatus, FirewallAction, AlertSeverity, AlertType, EmailBlocklistType, EmailDeploymentStatus
+from .email import (
+    EmailConfigCreate, EmailConfigUpdate, EmailConfigResponse,
+    EmailUserCreate, EmailUserUpdate, EmailUserResponse,
+    EmailBlocklistCreate, EmailBlocklistResponse,
+    SaslUserCreate, SaslUserUpdate, SaslUserResponse, SaslUserPasswordReset, SaslCredential,
+    EmailDomainCreate, EmailDomainResponse,
+    AgentEmailConfig
+)
 
 __all__ = [
     "AgentRegistration",
@@ -29,4 +37,22 @@ __all__ = [
     "FirewallAction",
     "AlertSeverity",
     "AlertType",
+    "EmailBlocklistType",
+    "EmailDeploymentStatus",
+    "EmailConfigCreate",
+    "EmailConfigUpdate",
+    "EmailConfigResponse",
+    "EmailUserCreate",
+    "EmailUserUpdate",
+    "EmailUserResponse",
+    "EmailBlocklistCreate",
+    "EmailBlocklistResponse",
+    "SaslUserCreate",
+    "SaslUserUpdate",
+    "SaslUserResponse",
+    "SaslUserPasswordReset",
+    "SaslCredential",
+    "EmailDomainCreate",
+    "EmailDomainResponse",
+    "AgentEmailConfig",
 ]

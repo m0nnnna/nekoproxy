@@ -30,3 +30,17 @@ class AlertType(str, Enum):
     SUSPICIOUS_SCAN = "suspicious_scan"  # Port scanning detected
     AUTH_FAILURE = "auth_failure"  # Authentication failure
     RATE_LIMIT = "rate_limit"  # Too many connections
+
+
+class EmailBlocklistType(str, Enum):
+    ADDRESS = "address"      # Single email address
+    DOMAIN = "domain"        # Entire domain (@example.com)
+    IP = "ip"               # Single IP
+    IP_RANGE = "ip_range"   # CIDR notation (192.168.1.0/24)
+
+
+class EmailDeploymentStatus(str, Enum):
+    NOT_DEPLOYED = "not_deployed"
+    DEPLOYING = "deploying"
+    DEPLOYED = "deployed"
+    FAILED = "failed"

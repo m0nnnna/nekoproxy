@@ -1,0 +1,58 @@
+{% for user in users %}
+<tr id="email-user-{{ user.id }}">
+    <td class="px-6 py-4 whitespace-nowrap">
+        {% if user.enabled %}
+        <button hx-post="/email/users/{{ user.id }}/toggle"
+                hx-target="#users-table"
+                hx-swap="innerHTML"
+                class="relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent bg-green-500 transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2"
+                title="Click to disable">
+            <span class="translate-x-5 inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out"></span>
+        </button>
+        {% else %}
+        <button hx-post="/email/users/{{ user.id }}/toggle"
+                hx-target="#users-table"
+                hx-swap="innerHTML"
+                class="relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent bg-gray-200 transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+                title="Click to enable">
+            <span class="translate-x-0 inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out"></span>
+        </button>
+        {% endif %}
+    </td>
+    <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+        {{ user.email_address }}
+        {% if user.mailcow_mailbox_id %}
+        <span class="ml-1 text-xs text-green-600" title="Mailcow mailbox created">&#x2713;</span>
+        {% endif %}
+    </td>
+    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+        {{ user.display_name or '-' }}
+    </td>
+    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+        {% if user.agent_id %}
+        <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-blue-100 text-blue-800">
+            {{ user.agent.hostname if user.agent else 'Agent #' ~ user.agent_id }}
+        </span>
+        {% else %}
+        <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-gray-100 text-gray-800">
+            All Agents
+        </span>
+        {% endif %}
+    </td>
+    <td class="px-6 py-4 whitespace-nowrap text-sm">
+        <button hx-delete="/email/users/{{ user.id }}"
+                hx-target="#email-user-{{ user.id }}"
+                hx-swap="outerHTML"
+                hx-confirm="Are you sure you want to delete this user?"
+                class="text-red-600 hover:text-red-900">
+            Delete
+        </button>
+    </td>
+</tr>
+{% else %}
+<tr>
+    <td colspan="5" class="px-6 py-4 text-center text-sm text-gray-500">
+        No authorized senders configured. Add a user above.
+    </td>
+</tr>
+{% endfor %}

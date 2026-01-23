@@ -211,11 +211,12 @@ StandardError=journal
 SyslogIdentifier=$SERVICE_NAME
 
 # Security hardening
-NoNewPrivileges=true
-ProtectSystem=strict
+# Note: ProtectSystem is disabled to allow email proxy deployment (apt-get, postfix config)
+# If you don't need email proxy, you can change to ProtectSystem=strict
+NoNewPrivileges=false
+ProtectSystem=false
 ProtectHome=true
 PrivateTmp=true
-ReadWritePaths=/opt/nekoproxy
 
 [Install]
 WantedBy=multi-user.target

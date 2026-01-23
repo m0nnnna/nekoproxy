@@ -32,6 +32,7 @@ imports:
  &#8226;   <a href="#controller.api.v1.alerts">controller.api.v1.alerts</a>
  &#8226;   <a href="#controller.api.v1.assignments">controller.api.v1.assignments</a>
  &#8226;   <a href="#controller.api.v1.blocklist">controller.api.v1.blocklist</a>
+ &#8226;   <a href="#controller.api.v1.email">controller.api.v1.email</a>
  &#8226;   <a href="#controller.api.v1.firewall">controller.api.v1.firewall</a>
  &#8226;   <a href="#controller.api.v1.services">controller.api.v1.services</a>
  &#8226;   <a href="#controller.api.v1.stats">controller.api.v1.stats</a>
@@ -10673,6 +10674,7 @@ imported by:
  &#8226;   <a href="#asyncio.unix_events">asyncio.unix_events</a>
  &#8226;   <a href="#asyncio.windows_events">asyncio.windows_events</a>
  &#8226;   <a href="#asyncio.windows_utils">asyncio.windows_utils</a>
+ &#8226;   <a href="#controller.core.email_manager">controller.core.email_manager</a>
  &#8226;   <a href="#controller.core.health_monitor">controller.core.health_monitor</a>
  &#8226;   <a href="#controller.web.routes">controller.web.routes</a>
  &#8226;   <a href="#fastapi.routing">fastapi.routing</a>
@@ -14461,6 +14463,7 @@ imports:
  &#8226;   <a href="#controller.api.v1.alerts">controller.api.v1.alerts</a>
  &#8226;   <a href="#controller.api.v1.assignments">controller.api.v1.assignments</a>
  &#8226;   <a href="#controller.api.v1.blocklist">controller.api.v1.blocklist</a>
+ &#8226;   <a href="#controller.api.v1.email">controller.api.v1.email</a>
  &#8226;   <a href="#controller.api.v1.firewall">controller.api.v1.firewall</a>
  &#8226;   <a href="#controller.api.v1.services">controller.api.v1.services</a>
  &#8226;   <a href="#controller.api.v1.stats">controller.api.v1.stats</a>
@@ -14472,6 +14475,7 @@ imported by:
  &#8226;   <a href="#controller.api.v1.alerts">controller.api.v1.alerts</a>
  &#8226;   <a href="#controller.api.v1.assignments">controller.api.v1.assignments</a>
  &#8226;   <a href="#controller.api.v1.blocklist">controller.api.v1.blocklist</a>
+ &#8226;   <a href="#controller.api.v1.email">controller.api.v1.email</a>
  &#8226;   <a href="#controller.api.v1.firewall">controller.api.v1.firewall</a>
  &#8226;   <a href="#controller.api.v1.services">controller.api.v1.services</a>
  &#8226;   <a href="#controller.api.v1.stats">controller.api.v1.stats</a>
@@ -14564,6 +14568,32 @@ imports:
  &#8226;   <a href="#fastapi">fastapi</a>
  &#8226;   <a href="#pydantic">pydantic</a>
  &#8226;   <a href="#pydantic.BaseModel">pydantic.BaseModel</a>
+ &#8226;   <a href="#sqlalchemy.orm">sqlalchemy.orm</a>
+ &#8226;   <a href="#typing">typing</a>
+
+  </div>
+  <div class="import">
+imported by:
+    <a href="#controller.api.v1">controller.api.v1</a>
+ &#8226;   <a href="#controller.main">controller.main</a>
+ &#8226;   <a href="#main.py">main.py</a>
+
+  </div>
+
+</div>
+
+<div class="node">
+  <a name="controller.api.v1.email"></a>
+  <a target="code" href="///C:/Users/Kake/Documents/scripts/nekoproxy/controller/api/v1/email.py" type="text/plain"><tt>controller.api.v1.email</tt></a>
+<span class="moduletype">SourceModule</span>  <div class="import">
+imports:
+    <a href="#controller.api.v1">controller.api.v1</a>
+ &#8226;   <a href="#controller.core.email_manager">controller.core.email_manager</a>
+ &#8226;   <a href="#controller.database.database">controller.database.database</a>
+ &#8226;   <a href="#controller.database.repositories">controller.database.repositories</a>
+ &#8226;   <a href="#fastapi">fastapi</a>
+ &#8226;   <a href="#shared.models.common">shared.models.common</a>
+ &#8226;   <a href="#shared.models.email">shared.models.email</a>
  &#8226;   <a href="#sqlalchemy.orm">sqlalchemy.orm</a>
  &#8226;   <a href="#typing">typing</a>
 
@@ -14685,6 +14715,7 @@ imports:
   <div class="import">
 imported by:
     <a href="#controller.core.agent_manager">controller.core.agent_manager</a>
+ &#8226;   <a href="#controller.core.email_manager">controller.core.email_manager</a>
  &#8226;   <a href="#controller.core.health_monitor">controller.core.health_monitor</a>
  &#8226;   <a href="#main.py">main.py</a>
 
@@ -14699,12 +14730,14 @@ imported by:
 imports:
     <a href="#controller.config">controller.config</a>
  &#8226;   <a href="#controller.core">controller.core</a>
+ &#8226;   <a href="#controller.core.email_manager">controller.core.email_manager</a>
  &#8226;   <a href="#controller.database.models">controller.database.models</a>
  &#8226;   <a href="#controller.database.repositories">controller.database.repositories</a>
  &#8226;   <a href="#datetime">datetime</a>
  &#8226;   <a href="#itertools">itertools</a>
  &#8226;   <a href="#logging">logging</a>
  &#8226;   <a href="#shared.models">shared.models</a>
+ &#8226;   <a href="#shared.models.email">shared.models.email</a>
  &#8226;   <a href="#sqlalchemy">sqlalchemy</a>
  &#8226;   <a href="#sqlalchemy.orm">sqlalchemy.orm</a>
  &#8226;   <a href="#typing">typing</a>
@@ -14720,6 +14753,39 @@ imported by:
 </div>
 
 <div class="node">
+  <a name="controller.core.email_manager"></a>
+  <a target="code" href="///C:/Users/Kake/Documents/scripts/nekoproxy/controller/core/email_manager.py" type="text/plain"><tt>controller.core.email_manager</tt></a>
+<span class="moduletype">SourceModule</span>  <div class="import">
+imports:
+    <a href="#asyncio">asyncio</a>
+ &#8226;   <a href="#controller.core">controller.core</a>
+ &#8226;   <a href="#controller.database.models">controller.database.models</a>
+ &#8226;   <a href="#controller.database.repositories">controller.database.repositories</a>
+ &#8226;   <a href="#datetime">datetime</a>
+ &#8226;   <a href="#hashlib">hashlib</a>
+ &#8226;   <a href="#httpx">httpx</a>
+ &#8226;   <a href="#logging">logging</a>
+ &#8226;   <a href="#secrets">secrets</a>
+ &#8226;   <a href="#shared.models.common">shared.models.common</a>
+ &#8226;   <a href="#shared.models.email">shared.models.email</a>
+ &#8226;   <a href="#sqlalchemy">sqlalchemy</a>
+ &#8226;   <a href="#sqlalchemy.orm">sqlalchemy.orm</a>
+ &#8226;   <a href="#string">string</a>
+ &#8226;   <a href="#typing">typing</a>
+
+  </div>
+  <div class="import">
+imported by:
+    <a href="#controller.api.v1.email">controller.api.v1.email</a>
+ &#8226;   <a href="#controller.core.agent_manager">controller.core.agent_manager</a>
+ &#8226;   <a href="#controller.core.health_monitor">controller.core.health_monitor</a>
+ &#8226;   <a href="#controller.web.routes">controller.web.routes</a>
+
+  </div>
+
+</div>
+
+<div class="node">
   <a name="controller.core.health_monitor"></a>
   <a target="code" href="///C:/Users/Kake/Documents/scripts/nekoproxy/controller/core/health_monitor.py" type="text/plain"><tt>controller.core.health_monitor</tt></a>
 <span class="moduletype">SourceModule</span>  <div class="import">
@@ -14727,6 +14793,7 @@ imports:
     <a href="#asyncio">asyncio</a>
  &#8226;   <a href="#controller.config">controller.config</a>
  &#8226;   <a href="#controller.core">controller.core</a>
+ &#8226;   <a href="#controller.core.email_manager">controller.core.email_manager</a>
  &#8226;   <a href="#controller.database.database">controller.database.database</a>
  &#8226;   <a href="#controller.database.repositories">controller.database.repositories</a>
  &#8226;   <a href="#datetime">datetime</a>
@@ -14782,6 +14849,7 @@ imported by:
  &#8226;   <a href="#controller.api.v1.alerts">controller.api.v1.alerts</a>
  &#8226;   <a href="#controller.api.v1.assignments">controller.api.v1.assignments</a>
  &#8226;   <a href="#controller.api.v1.blocklist">controller.api.v1.blocklist</a>
+ &#8226;   <a href="#controller.api.v1.email">controller.api.v1.email</a>
  &#8226;   <a href="#controller.api.v1.firewall">controller.api.v1.firewall</a>
  &#8226;   <a href="#controller.api.v1.services">controller.api.v1.services</a>
  &#8226;   <a href="#controller.api.v1.stats">controller.api.v1.stats</a>
@@ -14812,6 +14880,7 @@ imports:
   <div class="import">
 imported by:
     <a href="#controller.core.agent_manager">controller.core.agent_manager</a>
+ &#8226;   <a href="#controller.core.email_manager">controller.core.email_manager</a>
  &#8226;   <a href="#controller.database">controller.database</a>
  &#8226;   <a href="#controller.database.repositories">controller.database.repositories</a>
  &#8226;   <a href="#main.py">main.py</a>
@@ -14840,10 +14909,12 @@ imported by:
  &#8226;   <a href="#controller.api.v1.alerts">controller.api.v1.alerts</a>
  &#8226;   <a href="#controller.api.v1.assignments">controller.api.v1.assignments</a>
  &#8226;   <a href="#controller.api.v1.blocklist">controller.api.v1.blocklist</a>
+ &#8226;   <a href="#controller.api.v1.email">controller.api.v1.email</a>
  &#8226;   <a href="#controller.api.v1.firewall">controller.api.v1.firewall</a>
  &#8226;   <a href="#controller.api.v1.services">controller.api.v1.services</a>
  &#8226;   <a href="#controller.api.v1.stats">controller.api.v1.stats</a>
  &#8226;   <a href="#controller.core.agent_manager">controller.core.agent_manager</a>
+ &#8226;   <a href="#controller.core.email_manager">controller.core.email_manager</a>
  &#8226;   <a href="#controller.core.health_monitor">controller.core.health_monitor</a>
  &#8226;   <a href="#controller.web.routes">controller.web.routes</a>
  &#8226;   <a href="#main.py">main.py</a>
@@ -14864,6 +14935,7 @@ imports:
  &#8226;   <a href="#controller.api.v1.alerts">controller.api.v1.alerts</a>
  &#8226;   <a href="#controller.api.v1.assignments">controller.api.v1.assignments</a>
  &#8226;   <a href="#controller.api.v1.blocklist">controller.api.v1.blocklist</a>
+ &#8226;   <a href="#controller.api.v1.email">controller.api.v1.email</a>
  &#8226;   <a href="#controller.api.v1.firewall">controller.api.v1.firewall</a>
  &#8226;   <a href="#controller.api.v1.services">controller.api.v1.services</a>
  &#8226;   <a href="#controller.api.v1.stats">controller.api.v1.stats</a>
@@ -14914,6 +14986,7 @@ imported by:
 imports:
     <a href="#asyncio">asyncio</a>
  &#8226;   <a href="#controller.config">controller.config</a>
+ &#8226;   <a href="#controller.core.email_manager">controller.core.email_manager</a>
  &#8226;   <a href="#controller.database.database">controller.database.database</a>
  &#8226;   <a href="#controller.database.repositories">controller.database.repositories</a>
  &#8226;   <a href="#controller.web">controller.web</a>
@@ -14921,6 +14994,7 @@ imports:
  &#8226;   <a href="#fastapi.responses">fastapi.responses</a>
  &#8226;   <a href="#fastapi.templating">fastapi.templating</a>
  &#8226;   <a href="#httpx">httpx</a>
+ &#8226;   <a href="#json">json</a>
  &#8226;   <a href="#logging">logging</a>
  &#8226;   <a href="#shared.models.common">shared.models.common</a>
  &#8226;   <a href="#sqlalchemy.orm">sqlalchemy.orm</a>
@@ -16823,6 +16897,7 @@ imported by:
  &#8226;   <a href="#calendar">calendar</a>
  &#8226;   <a href="#click.types">click.types</a>
  &#8226;   <a href="#controller.core.agent_manager">controller.core.agent_manager</a>
+ &#8226;   <a href="#controller.core.email_manager">controller.core.email_manager</a>
  &#8226;   <a href="#controller.core.health_monitor">controller.core.health_monitor</a>
  &#8226;   <a href="#controller.database.models">controller.database.models</a>
  &#8226;   <a href="#controller.database.repositories">controller.database.repositories</a>
@@ -16862,6 +16937,7 @@ imported by:
  &#8226;   <a href="#shared.models.agent">shared.models.agent</a>
  &#8226;   <a href="#shared.models.alert">shared.models.alert</a>
  &#8226;   <a href="#shared.models.assignment">shared.models.assignment</a>
+ &#8226;   <a href="#shared.models.email">shared.models.email</a>
  &#8226;   <a href="#shared.models.firewall">shared.models.firewall</a>
  &#8226;   <a href="#shared.models.service">shared.models.service</a>
  &#8226;   <a href="#shared.models.stats">shared.models.stats</a>
@@ -20505,6 +20581,7 @@ imported by:
  &#8226;   <a href="#controller.api.v1.alerts">controller.api.v1.alerts</a>
  &#8226;   <a href="#controller.api.v1.assignments">controller.api.v1.assignments</a>
  &#8226;   <a href="#controller.api.v1.blocklist">controller.api.v1.blocklist</a>
+ &#8226;   <a href="#controller.api.v1.email">controller.api.v1.email</a>
  &#8226;   <a href="#controller.api.v1.firewall">controller.api.v1.firewall</a>
  &#8226;   <a href="#controller.api.v1.services">controller.api.v1.services</a>
  &#8226;   <a href="#controller.api.v1.stats">controller.api.v1.stats</a>
@@ -22633,6 +22710,7 @@ imports:
   <div class="import">
 imported by:
     <a href="#_pytest._py.path">_pytest._py.path</a>
+ &#8226;   <a href="#controller.core.email_manager">controller.core.email_manager</a>
  &#8226;   <a href="#cryptography.x509.extensions">cryptography.x509.extensions</a>
  &#8226;   <a href="#hmac">hmac</a>
  &#8226;   <a href="#httpx._auth">httpx._auth</a>
@@ -24157,7 +24235,8 @@ imports:
   </div>
   <div class="import">
 imported by:
-    <a href="#controller.web.routes">controller.web.routes</a>
+    <a href="#controller.core.email_manager">controller.core.email_manager</a>
+ &#8226;   <a href="#controller.web.routes">controller.web.routes</a>
  &#8226;   <a href="#httpx.__version__">httpx.__version__</a>
  &#8226;   <a href="#httpx._api">httpx._api</a>
  &#8226;   <a href="#httpx._auth">httpx._auth</a>
@@ -26982,6 +27061,7 @@ imports:
   <div class="import">
 imported by:
     <a href="#_pytest.cacheprovider">_pytest.cacheprovider</a>
+ &#8226;   <a href="#controller.web.routes">controller.web.routes</a>
  &#8226;   <a href="#fastapi.openapi.docs">fastapi.openapi.docs</a>
  &#8226;   <a href="#fastapi.routing">fastapi.routing</a>
  &#8226;   <a href="#httpx._content">httpx._content</a>
@@ -27260,6 +27340,7 @@ imported by:
  &#8226;   <a href="#asyncio.log">asyncio.log</a>
  &#8226;   <a href="#concurrent.futures._base">concurrent.futures._base</a>
  &#8226;   <a href="#controller.core.agent_manager">controller.core.agent_manager</a>
+ &#8226;   <a href="#controller.core.email_manager">controller.core.email_manager</a>
  &#8226;   <a href="#controller.core.health_monitor">controller.core.health_monitor</a>
  &#8226;   <a href="#controller.main">controller.main</a>
  &#8226;   <a href="#controller.web.routes">controller.web.routes</a>
@@ -33687,6 +33768,7 @@ imported by:
  &#8226;   <a href="#shared.models.agent">shared.models.agent</a>
  &#8226;   <a href="#shared.models.alert">shared.models.alert</a>
  &#8226;   <a href="#shared.models.assignment">shared.models.assignment</a>
+ &#8226;   <a href="#shared.models.email">shared.models.email</a>
  &#8226;   <a href="#shared.models.firewall">shared.models.firewall</a>
  &#8226;   <a href="#shared.models.service">shared.models.service</a>
  &#8226;   <a href="#shared.models.stats">shared.models.stats</a>
@@ -33723,6 +33805,7 @@ imported by:
  &#8226;   <a href="#shared.models.agent">shared.models.agent</a>
  &#8226;   <a href="#shared.models.alert">shared.models.alert</a>
  &#8226;   <a href="#shared.models.assignment">shared.models.assignment</a>
+ &#8226;   <a href="#shared.models.email">shared.models.email</a>
  &#8226;   <a href="#shared.models.firewall">shared.models.firewall</a>
  &#8226;   <a href="#shared.models.service">shared.models.service</a>
  &#8226;   <a href="#shared.models.stats">shared.models.stats</a>
@@ -49011,7 +49094,8 @@ imports:
   </div>
   <div class="import">
 imported by:
-    <a href="#multiprocessing.shared_memory">multiprocessing.shared_memory</a>
+    <a href="#controller.core.email_manager">controller.core.email_manager</a>
+ &#8226;   <a href="#multiprocessing.shared_memory">multiprocessing.shared_memory</a>
  &#8226;   <a href="#starlette.responses">starlette.responses</a>
  &#8226;   <a href="#websockets.frames">websockets.frames</a>
  &#8226;   <a href="#websockets.utils">websockets.utils</a>
@@ -53115,6 +53199,7 @@ imports:
  &#8226;   <a href="#shared.models.alert">shared.models.alert</a>
  &#8226;   <a href="#shared.models.assignment">shared.models.assignment</a>
  &#8226;   <a href="#shared.models.common">shared.models.common</a>
+ &#8226;   <a href="#shared.models.email">shared.models.email</a>
  &#8226;   <a href="#shared.models.firewall">shared.models.firewall</a>
  &#8226;   <a href="#shared.models.service">shared.models.service</a>
  &#8226;   <a href="#shared.models.stats">shared.models.stats</a>
@@ -53134,6 +53219,7 @@ imported by:
  &#8226;   <a href="#shared.models.alert">shared.models.alert</a>
  &#8226;   <a href="#shared.models.assignment">shared.models.assignment</a>
  &#8226;   <a href="#shared.models.common">shared.models.common</a>
+ &#8226;   <a href="#shared.models.email">shared.models.email</a>
  &#8226;   <a href="#shared.models.firewall">shared.models.firewall</a>
  &#8226;   <a href="#shared.models.service">shared.models.service</a>
  &#8226;   <a href="#shared.models.stats">shared.models.stats</a>
@@ -53152,6 +53238,7 @@ imports:
  &#8226;   <a href="#pydantic.BaseModel">pydantic.BaseModel</a>
  &#8226;   <a href="#shared.models">shared.models</a>
  &#8226;   <a href="#shared.models.common">shared.models.common</a>
+ &#8226;   <a href="#shared.models.email">shared.models.email</a>
  &#8226;   <a href="#shared.models.firewall">shared.models.firewall</a>
  &#8226;   <a href="#shared.models.service">shared.models.service</a>
  &#8226;   <a href="#typing">typing</a>
@@ -53219,6 +53306,8 @@ imports:
   <div class="import">
 imported by:
     <a href="#controller.api.v1.alerts">controller.api.v1.alerts</a>
+ &#8226;   <a href="#controller.api.v1.email">controller.api.v1.email</a>
+ &#8226;   <a href="#controller.core.email_manager">controller.core.email_manager</a>
  &#8226;   <a href="#controller.core.health_monitor">controller.core.health_monitor</a>
  &#8226;   <a href="#controller.database.models">controller.database.models</a>
  &#8226;   <a href="#controller.database.repositories">controller.database.repositories</a>
@@ -53227,8 +53316,34 @@ imported by:
  &#8226;   <a href="#shared.models">shared.models</a>
  &#8226;   <a href="#shared.models.agent">shared.models.agent</a>
  &#8226;   <a href="#shared.models.alert">shared.models.alert</a>
+ &#8226;   <a href="#shared.models.email">shared.models.email</a>
  &#8226;   <a href="#shared.models.firewall">shared.models.firewall</a>
  &#8226;   <a href="#shared.models.service">shared.models.service</a>
+
+  </div>
+
+</div>
+
+<div class="node">
+  <a name="shared.models.email"></a>
+  <a target="code" href="///C:/Users/Kake/Documents/scripts/nekoproxy/shared/models/email.py" type="text/plain"><tt>shared.models.email</tt></a>
+<span class="moduletype">SourceModule</span>  <div class="import">
+imports:
+    <a href="#datetime">datetime</a>
+ &#8226;   <a href="#pydantic">pydantic</a>
+ &#8226;   <a href="#pydantic.BaseModel">pydantic.BaseModel</a>
+ &#8226;   <a href="#shared.models">shared.models</a>
+ &#8226;   <a href="#shared.models.common">shared.models.common</a>
+ &#8226;   <a href="#typing">typing</a>
+
+  </div>
+  <div class="import">
+imported by:
+    <a href="#controller.api.v1.email">controller.api.v1.email</a>
+ &#8226;   <a href="#controller.core.agent_manager">controller.core.agent_manager</a>
+ &#8226;   <a href="#controller.core.email_manager">controller.core.email_manager</a>
+ &#8226;   <a href="#shared.models">shared.models</a>
+ &#8226;   <a href="#shared.models.agent">shared.models.agent</a>
 
   </div>
 
@@ -53836,6 +53951,7 @@ imports:
   <div class="import">
 imported by:
     <a href="#controller.core.agent_manager">controller.core.agent_manager</a>
+ &#8226;   <a href="#controller.core.email_manager">controller.core.email_manager</a>
  &#8226;   <a href="#controller.database.database">controller.database.database</a>
  &#8226;   <a href="#controller.database.models">controller.database.models</a>
  &#8226;   <a href="#controller.database.repositories">controller.database.repositories</a>
@@ -57618,10 +57734,12 @@ imported by:
  &#8226;   <a href="#controller.api.v1.alerts">controller.api.v1.alerts</a>
  &#8226;   <a href="#controller.api.v1.assignments">controller.api.v1.assignments</a>
  &#8226;   <a href="#controller.api.v1.blocklist">controller.api.v1.blocklist</a>
+ &#8226;   <a href="#controller.api.v1.email">controller.api.v1.email</a>
  &#8226;   <a href="#controller.api.v1.firewall">controller.api.v1.firewall</a>
  &#8226;   <a href="#controller.api.v1.services">controller.api.v1.services</a>
  &#8226;   <a href="#controller.api.v1.stats">controller.api.v1.stats</a>
  &#8226;   <a href="#controller.core.agent_manager">controller.core.agent_manager</a>
+ &#8226;   <a href="#controller.core.email_manager">controller.core.email_manager</a>
  &#8226;   <a href="#controller.database.database">controller.database.database</a>
  &#8226;   <a href="#controller.database.models">controller.database.models</a>
  &#8226;   <a href="#controller.database.repositories">controller.database.repositories</a>
@@ -63065,6 +63183,7 @@ imports:
   <div class="import">
 imported by:
     <a href="#cmd">cmd</a>
+ &#8226;   <a href="#controller.core.email_manager">controller.core.email_manager</a>
  &#8226;   <a href="#email._encoded_words">email._encoded_words</a>
  &#8226;   <a href="#email._header_value_parser">email._header_value_parser</a>
  &#8226;   <a href="#email.quoprimime">email.quoprimime</a>
@@ -66889,8 +67008,10 @@ imported by:
  &#8226;   <a href="#click.types">click.types</a>
  &#8226;   <a href="#click.utils">click.utils</a>
  &#8226;   <a href="#controller.api.v1.blocklist">controller.api.v1.blocklist</a>
+ &#8226;   <a href="#controller.api.v1.email">controller.api.v1.email</a>
  &#8226;   <a href="#controller.config">controller.config</a>
  &#8226;   <a href="#controller.core.agent_manager">controller.core.agent_manager</a>
+ &#8226;   <a href="#controller.core.email_manager">controller.core.email_manager</a>
  &#8226;   <a href="#controller.database.database">controller.database.database</a>
  &#8226;   <a href="#controller.database.repositories">controller.database.repositories</a>
  &#8226;   <a href="#cryptography.exceptions">cryptography.exceptions</a>
@@ -67338,6 +67459,7 @@ imported by:
  &#8226;   <a href="#shared.models.agent">shared.models.agent</a>
  &#8226;   <a href="#shared.models.alert">shared.models.alert</a>
  &#8226;   <a href="#shared.models.assignment">shared.models.assignment</a>
+ &#8226;   <a href="#shared.models.email">shared.models.email</a>
  &#8226;   <a href="#shared.models.firewall">shared.models.firewall</a>
  &#8226;   <a href="#shared.models.service">shared.models.service</a>
  &#8226;   <a href="#shared.models.stats">shared.models.stats</a>

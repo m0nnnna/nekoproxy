@@ -1,0 +1,438 @@
+{% extends "base.html" %}
+
+{% block title %}Email Proxy - NekoProxy{% endblock %}
+
+{% block content %}
+<div class="flex justify-between items-center mb-6">
+    <h1 class="text-2xl font-bold text-gray-900">Email Proxy</h1>
+    <div class="flex items-center space-x-4">
+        <span id="apply-status" class="text-sm"></span>
+        <button hx-post="/email/apply"
+                hx-target="#apply-status"
+                hx-swap="innerHTML"
+                class="bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 flex items-center">
+            <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+            </svg>
+            Apply to Agents
+        </button>
+    </div>
+</div>
+
+<!-- Info Banner -->
+<div class="bg-blue-50 border-l-4 border-blue-400 p-4 mb-6">
+    <div class="flex">
+        <div class="ml-3">
+            <p class="text-sm text-blue-700">
+                <strong>Email Proxy</strong> relays email through Postfix + rspamd + SASL to your Mailcow server.
+                Only SASL-authenticated users can send email. Outgoing emails are stamped with the proxy's IP address.
+            </p>
+        </div>
+    </div>
+</div>
+
+<!-- Password Display Area (shared across sections) -->
+<div id="password-display" class="hidden bg-yellow-50 border-l-4 border-yellow-400 p-4 mb-6">
+    <div class="flex justify-between items-start">
+        <div>
+            <p class="text-sm text-yellow-700">
+                <strong>Credentials Created:</strong> <span id="generated-email" class="font-mono"></span>
+            </p>
+            <p class="text-sm text-yellow-700 mt-1">
+                <strong>Password:</strong> <span id="generated-password" class="font-mono bg-yellow-100 px-2 py-1 rounded select-all"></span>
+            </p>
+            <p class="text-xs text-yellow-600 mt-1">Save this password now - it won't be shown again! Click X to dismiss.</p>
+        </div>
+        <button onclick="document.getElementById('password-display').classList.add('hidden')" class="text-yellow-600 hover:text-yellow-800">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+            </svg>
+        </button>
+    </div>
+</div>
+
+<!-- Mailcow Configuration Section -->
+<div class="bg-white shadow rounded-lg p-6 mb-6">
+    <h2 class="text-lg font-semibold text-gray-900 mb-4">Mailcow Connection</h2>
+    <form hx-post="/email/config" hx-target="#config-status" hx-swap="innerHTML" class="space-y-4">
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+            <div>
+                <label class="block text-sm font-medium text-gray-700">Mailcow SMTP Host</label>
+                <input type="text" name="mailcow_host" required placeholder="mail.example.com"
+                       value="{{ config.mailcow_host if config else '' }}"
+                       class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm border px-3 py-2">
+                <p class="mt-1 text-xs text-gray-500">SMTP server for mail relay</p>
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700">SMTP Port</label>
+                <input type="number" name="mailcow_port" value="{{ config.mailcow_port if config else 25 }}"
+                       class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm border px-3 py-2">
+                <p class="mt-1 text-xs text-gray-500">Usually 25, 465, or 587</p>
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700">Web UI URL</label>
+                <input type="url" name="mailcow_api_url" placeholder="https://mail.example.com"
+                       value="{{ config.mailcow_api_url if config else '' }}"
+                       class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm border px-3 py-2">
+                <p class="mt-1 text-xs text-gray-500">For mailbox creation API</p>
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700">API Key</label>
+                <input type="password" name="mailcow_api_key" placeholder="Mailcow API key"
+                       class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm border px-3 py-2">
+                <p class="mt-1 text-xs text-gray-500">From Mailcow admin panel</p>
+            </div>
+            <div class="flex items-end">
+                <button type="submit"
+                        class="w-full bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2">
+                    Save Configuration
+                </button>
+            </div>
+        </div>
+        <div id="config-status"></div>
+    </form>
+</div>
+
+<!-- Deploy to Agents Section -->
+<div class="bg-white shadow rounded-lg p-6 mb-6">
+    <h2 class="text-lg font-semibold text-gray-900 mb-4">Deploy Email Proxy</h2>
+    <p class="text-sm text-gray-500 mb-4">
+        Deploy Postfix + rspamd + SASL to selected agents. This will install and configure the email relay service.
+    </p>
+    <form hx-post="/email/deploy" hx-target="#deploy-status" hx-swap="innerHTML">
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+            <div>
+                <label class="block text-sm font-medium text-gray-700">Select Agents</label>
+                <select name="agent_ids" multiple
+                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm border px-3 py-2 h-32">
+                    {% for agent in agents %}
+                    <option value="{{ agent.id }}">{{ agent.hostname }} ({{ agent.wireguard_ip }})</option>
+                    {% endfor %}
+                </select>
+                <p class="mt-1 text-xs text-gray-500">Hold Ctrl/Cmd to select multiple</p>
+            </div>
+            <div class="flex items-center">
+                <button type="submit"
+                        class="bg-purple-600 text-white px-4 py-2 rounded-md hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2">
+                    Deploy to Selected
+                </button>
+            </div>
+        </div>
+        <div id="deploy-status"></div>
+    </form>
+
+    <!-- Deployment Status Table -->
+    <div class="mt-4">
+        <h3 class="text-sm font-medium text-gray-700 mb-2">Deployment Status</h3>
+        <table class="min-w-full divide-y divide-gray-200">
+            <thead class="bg-gray-50">
+                <tr>
+                    <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Agent</th>
+                    <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Mailcow Host</th>
+                    <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                </tr>
+            </thead>
+            <tbody id="deployment-table" class="bg-white divide-y divide-gray-200">
+                {% include "partials/email_deployment_table.html" %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- SASL Users Section -->
+<div class="bg-white shadow rounded-lg p-6 mb-6">
+    <h2 class="text-lg font-semibold text-gray-900 mb-4">SASL Authentication Users</h2>
+    <p class="text-sm text-gray-500 mb-4">
+        Mailcow uses these credentials to connect to the proxy for outbound relay. Create matching users in Mailcow's Transport settings.
+    </p>
+    <form hx-post="/email/sasl" hx-target="#sasl-table" hx-swap="innerHTML" class="space-y-4 mb-4">
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div>
+                <label class="block text-sm font-medium text-gray-700">Username</label>
+                <input type="text" name="username" required placeholder="user@example.com"
+                       class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm border px-3 py-2">
+                <p class="mt-1 text-xs text-gray-500">Usually the email address</p>
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700">Password</label>
+                <input type="password" name="password" required placeholder="Strong password"
+                       class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm border px-3 py-2">
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700">Agent</label>
+                <select name="agent_id"
+                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm border px-3 py-2">
+                    <option value="">All Agents</option>
+                    {% for agent in agents %}
+                    <option value="{{ agent.id }}">{{ agent.hostname }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="flex items-end">
+                <button type="submit"
+                        class="w-full bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2">
+                    Add SASL User
+                </button>
+            </div>
+        </div>
+    </form>
+    <div id="sasl-status" class="mb-4"></div>
+
+    <table class="min-w-full divide-y divide-gray-200">
+        <thead class="bg-gray-50">
+            <tr>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Enabled</th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Username</th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Agent</th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
+            </tr>
+        </thead>
+        <tbody id="sasl-table" class="bg-white divide-y divide-gray-200">
+            {% include "partials/email_sasl_table.html" %}
+        </tbody>
+    </table>
+</div>
+
+<!-- Relay Domains Section -->
+<div class="bg-white shadow rounded-lg p-6 mb-6">
+    <h2 class="text-lg font-semibold text-gray-900 mb-4">Relay Domains</h2>
+    <p class="text-sm text-gray-500 mb-4">
+        Domains the proxy will accept email for. Sync from Mailcow to auto-import all configured domains.
+    </p>
+    <div class="flex space-x-4 mb-4">
+        <form hx-post="/email/domains" hx-target="#domains-table" hx-swap="innerHTML" class="flex space-x-2">
+            <input type="text" name="domain" required placeholder="example.com"
+                   class="rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm border px-3 py-2">
+            <button type="submit"
+                    class="bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2">
+                Add Domain
+            </button>
+        </form>
+        <button hx-post="/email/domains/sync"
+                hx-target="#domains-table"
+                hx-swap="innerHTML"
+                class="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2">
+            Sync from Mailcow
+        </button>
+    </div>
+
+    <table class="min-w-full divide-y divide-gray-200">
+        <thead class="bg-gray-50">
+            <tr>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Enabled</th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Domain</th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Source</th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
+            </tr>
+        </thead>
+        <tbody id="domains-table" class="bg-white divide-y divide-gray-200">
+            {% include "partials/email_domains_table.html" %}
+        </tbody>
+    </table>
+</div>
+
+<!-- Authorized Senders Section -->
+<div class="bg-white shadow rounded-lg p-6 mb-6">
+    <h2 class="text-lg font-semibold text-gray-900 mb-4">Authorized Senders (Legacy)</h2>
+    <p class="text-sm text-gray-500 mb-4">
+        Legacy sender whitelist. With SASL enabled, use SASL users above instead.
+        These addresses are allowed even without SASL authentication.
+    </p>
+    <form hx-post="/email/users" hx-target="#users-table" hx-swap="innerHTML" class="space-y-4 mb-4">
+        <div class="grid grid-cols-1 md:grid-cols-5 gap-4">
+            <div>
+                <label class="block text-sm font-medium text-gray-700">Email Address</label>
+                <input type="email" name="email_address" required placeholder="user@example.com"
+                       class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm border px-3 py-2">
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700">Display Name</label>
+                <input type="text" name="display_name" placeholder="John Doe"
+                       class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm border px-3 py-2">
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700">Agent</label>
+                <select name="agent_id"
+                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm border px-3 py-2">
+                    <option value="">All Agents</option>
+                    {% for agent in agents %}
+                    <option value="{{ agent.id }}">{{ agent.hostname }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="flex items-center">
+                <label class="flex items-center text-sm text-gray-700">
+                    <input type="checkbox" name="create_mailcow_mailbox" value="true"
+                           class="rounded border-gray-300 text-blue-600 focus:ring-blue-500 mr-2">
+                    Create Mailcow Mailbox
+                </label>
+            </div>
+            <div class="flex items-end">
+                <button type="submit"
+                        class="w-full bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2">
+                    Add Sender
+                </button>
+            </div>
+        </div>
+    </form>
+
+    <table class="min-w-full divide-y divide-gray-200">
+        <thead class="bg-gray-50">
+            <tr>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Enabled</th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Email</th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Agent</th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
+            </tr>
+        </thead>
+        <tbody id="users-table" class="bg-white divide-y divide-gray-200">
+            {% include "partials/email_users_table.html" %}
+        </tbody>
+    </table>
+</div>
+
+<!-- Mailcow Mailboxes Section -->
+<div class="bg-white shadow rounded-lg p-6 mb-6">
+    <h2 class="text-lg font-semibold text-gray-900 mb-4">Mailcow Mailboxes</h2>
+    <p class="text-sm text-gray-500 mb-4">
+        View existing mailboxes in Mailcow. Manage mailboxes directly in Mailcow admin.
+    </p>
+    <button hx-get="/email/mailcow/mailboxes"
+            hx-target="#mailboxes-table"
+            hx-swap="innerHTML"
+            class="mb-4 bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2">
+        Refresh Mailboxes
+    </button>
+
+    <table class="min-w-full divide-y divide-gray-200">
+        <thead class="bg-gray-50">
+            <tr>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Email</th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Domain</th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Quota</th>
+            </tr>
+        </thead>
+        <tbody id="mailboxes-table" class="bg-white divide-y divide-gray-200">
+            {% include "partials/email_mailcow_mailboxes.html" %}
+        </tbody>
+    </table>
+</div>
+
+<!-- Mailcow Aliases Section -->
+<div class="bg-white shadow rounded-lg p-6 mb-6">
+    <h2 class="text-lg font-semibold text-gray-900 mb-4">Mailcow Aliases</h2>
+    <p class="text-sm text-gray-500 mb-4">
+        Manage email aliases in Mailcow.
+    </p>
+    <form hx-post="/email/mailcow/aliases" hx-target="#aliases-table" hx-swap="innerHTML" class="flex space-x-2 mb-4">
+        <input type="email" name="address" required placeholder="alias@example.com"
+               class="rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm border px-3 py-2">
+        <input type="text" name="goto" required placeholder="destination@example.com"
+               class="rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm border px-3 py-2">
+        <button type="submit"
+                class="bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2">
+            Add Alias
+        </button>
+        <button type="button" hx-get="/email/mailcow/aliases"
+                hx-target="#aliases-table"
+                hx-swap="innerHTML"
+                class="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2">
+            Refresh
+        </button>
+    </form>
+
+    <table class="min-w-full divide-y divide-gray-200">
+        <thead class="bg-gray-50">
+            <tr>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Alias</th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Destination</th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
+            </tr>
+        </thead>
+        <tbody id="aliases-table" class="bg-white divide-y divide-gray-200">
+            {% include "partials/email_mailcow_aliases.html" %}
+        </tbody>
+    </table>
+</div>
+
+<!-- Email Blocklist Section -->
+<div class="bg-white shadow rounded-lg p-6">
+    <h2 class="text-lg font-semibold text-gray-900 mb-4">Email Blocklist</h2>
+    <p class="text-sm text-gray-500 mb-4">
+        Block emails from specific addresses, domains, or IP addresses.
+    </p>
+    <form hx-post="/email/blocklist" hx-target="#blocklist-table" hx-swap="innerHTML" class="space-y-4 mb-4">
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div>
+                <label class="block text-sm font-medium text-gray-700">Type</label>
+                <select name="block_type"
+                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm border px-3 py-2">
+                    <option value="address">Email Address</option>
+                    <option value="domain">Domain</option>
+                    <option value="ip">IP Address</option>
+                    <option value="ip_range">IP Range (CIDR)</option>
+                </select>
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700">Value</label>
+                <input type="text" name="value" required placeholder="spam@example.com or example.com"
+                       class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm border px-3 py-2">
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700">Reason (optional)</label>
+                <input type="text" name="reason" placeholder="Spam sender"
+                       class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm border px-3 py-2">
+            </div>
+            <div class="flex items-end">
+                <button type="submit"
+                        class="w-full bg-red-600 text-white px-4 py-2 rounded-md hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2">
+                    Add to Blocklist
+                </button>
+            </div>
+        </div>
+    </form>
+
+    <table class="min-w-full divide-y divide-gray-200">
+        <thead class="bg-gray-50">
+            <tr>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Type</th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Value</th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Reason</th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Added</th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
+            </tr>
+        </thead>
+        <tbody id="blocklist-table" class="bg-white divide-y divide-gray-200">
+            {% include "partials/email_blocklist_table.html" %}
+        </tbody>
+    </table>
+</div>
+
+<script>
+// Listen for password display event from HTMX
+document.body.addEventListener('showPassword', function(event) {
+    const data = event.detail;
+    const passwordDisplay = document.getElementById('password-display');
+    const passwordSpan = document.getElementById('generated-password');
+    const emailSpan = document.getElementById('generated-email');
+
+    if (data && data.password) {
+        passwordSpan.textContent = data.password;
+        emailSpan.textContent = data.email || '';
+        passwordDisplay.classList.remove('hidden');
+
+        // Scroll to make sure it's visible
+        passwordDisplay.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+
+        // Auto-hide after 2 minutes
+        setTimeout(function() {
+            passwordDisplay.classList.add('hidden');
+        }, 120000);
+    }
+});
+</script>
+{% endblock %}

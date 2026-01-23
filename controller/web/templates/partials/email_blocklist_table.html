@@ -1,0 +1,47 @@
+{% for entry in blocklist %}
+<tr id="email-blocklist-{{ entry.id }}">
+    <td class="px-6 py-4 whitespace-nowrap text-sm">
+        {% if entry.block_type.value == 'address' %}
+        <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-blue-100 text-blue-800">
+            Address
+        </span>
+        {% elif entry.block_type.value == 'domain' %}
+        <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-purple-100 text-purple-800">
+            Domain
+        </span>
+        {% elif entry.block_type.value == 'ip' %}
+        <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-orange-100 text-orange-800">
+            IP
+        </span>
+        {% else %}
+        <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-red-100 text-red-800">
+            IP Range
+        </span>
+        {% endif %}
+    </td>
+    <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+        {{ entry.value }}
+    </td>
+    <td class="px-6 py-4 text-sm text-gray-500">
+        {{ entry.reason or '-' }}
+    </td>
+    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+        {{ entry.added_at.strftime('%Y-%m-%d %H:%M') }}
+    </td>
+    <td class="px-6 py-4 whitespace-nowrap text-sm">
+        <button hx-delete="/email/blocklist/{{ entry.id }}"
+                hx-target="#email-blocklist-{{ entry.id }}"
+                hx-swap="outerHTML"
+                hx-confirm="Are you sure you want to remove this blocklist entry?"
+                class="text-red-600 hover:text-red-900">
+            Remove
+        </button>
+    </td>
+</tr>
+{% else %}
+<tr>
+    <td colspan="5" class="px-6 py-4 text-center text-sm text-gray-500">
+        No blocklist entries. Add entries above to block unwanted email senders.
+    </td>
+</tr>
+{% endfor %}

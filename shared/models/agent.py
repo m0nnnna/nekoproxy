@@ -5,6 +5,7 @@ from pydantic import BaseModel, Field
 from .common import HealthStatus
 from .service import ServiceResponse
 from .firewall import FirewallRuleResponse
+from .email import AgentEmailConfig
 
 
 class AgentRegistration(BaseModel):
@@ -12,7 +13,7 @@ class AgentRegistration(BaseModel):
     hostname: str
     wireguard_ip: str
     public_ip: Optional[str] = None
-    version: str = "1.0.0"
+    version: str = "2.0.0"
 
 
 class AgentHeartbeat(BaseModel):
@@ -31,6 +32,7 @@ class AgentConfig(BaseModel):
     services: List[ServiceResponse] = Field(default_factory=list)  # Services assigned to this agent
     blocklist: List[str] = Field(default_factory=list)
     firewall_rules: List[FirewallRuleResponse] = Field(default_factory=list)  # Firewall rules for this agent
+    email_config: Optional[AgentEmailConfig] = None  # Email proxy configuration
     heartbeat_interval: int = 30
 
 
@@ -45,7 +47,7 @@ class AgentStatus(BaseModel):
     active_connections: int = 0
     cpu_percent: float = 0.0
     memory_percent: float = 0.0
-    version: str = "1.0.0"
+    version: str = "2.0.0"
     created_at: datetime
 
     class Config:

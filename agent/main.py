@@ -16,6 +16,7 @@ from agent.core.config_sync import ConfigSync
 from agent.core.stats_reporter import StatsReporter
 from agent.core.firewall import FirewallManager
 from agent.core.control_api import ControlAPI
+from agent.core.email_proxy import EmailProxyManager
 from shared.models import AgentConfig, AgentRegistration
 
 # Configure logging
@@ -42,6 +43,9 @@ class NekoProxyAgent:
 
         # Firewall manager
         self._firewall_manager = FirewallManager()
+
+        # Email proxy manager
+        self._email_manager = EmailProxyManager()
 
         # Controller communication
         self._heartbeat: Optional[HeartbeatSender] = None
@@ -85,12 +89,39 @@ class NekoProxyAgent:
         # Sync firewall rules
         await self._firewall_manager.sync_rules(config.firewall_rules)
 
+        # Apply email config if present and email proxy is deployed
+        if config.email_config and self._email_manager.is_deployed:
+            await self._email_manager.apply_config(config.email_config)
+
         logger.info(
             f"Config applied: {len([s for s in services if s['protocol'] == 'tcp'])} TCP services, "
             f"{len([s for s in services if s['protocol'] == 'udp'])} UDP services, "
             f"{len(config.blocklist)} blocked IPs, "
             f"{len(config.firewall_rules)} firewall rules"
         )
+
+    async def _deploy_email(self, mailcow_host: str, mailcow_port: int, proxy_ip: str) -> tuple:
+        """Deploy email proxy (Postfix + rspamd).
+
+        Called by ControlAPI when controller requests deployment.
+
+        Returns:
+            Tuple of (success: bool, error_message: str or None)
+        """
+        return await self._email_manager.deploy(mailcow_host, mailcow_port, proxy_ip)
+
+    async def _trigger_email_sync(self):
+        """Trigger email configuration sync from controller.
+
+        Called by ControlAPI when controller requests email config refresh.
+        """
+        if not self._email_manager.is_deployed:
+            logger.warning("Email proxy not deployed, skipping email sync")
+            return
+
+        # Force a full config sync which will include email config
+        if self._config_sync:
+            await self._config_sync.force_sync()
 
     async def register(self) -> bool:
         """Register with the controller."""
@@ -160,7 +191,9 @@ class NekoProxyAgent:
 
         # Start control API (for receiving push notifications)
         self._control_api = ControlAPI(
-            trigger_sync=self._config_sync.force_sync
+            trigger_sync=self._config_sync.force_sync,
+            deploy_email=self._deploy_email,
+            trigger_email_sync=self._trigger_email_sync
         )
         await self._control_api.start()
 
@@ -192,6 +225,9 @@ class NekoProxyAgent:
 
         # Clean up firewall rules
         await self._firewall_manager.shutdown()
+
+        # Stop email proxy if deployed
+        await self._email_manager.shutdown()
 
         if self._stats_reporter:
             await self._stats_reporter.stop()

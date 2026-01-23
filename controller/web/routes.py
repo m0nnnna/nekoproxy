@@ -20,9 +20,13 @@ from controller.database.repositories import (
     BlocklistRepository,
     ConnectionStatRepository,
     FirewallRuleRepository,
-    AlertRepository
+    AlertRepository,
+    EmailConfigRepository,
+    EmailUserRepository,
+    EmailBlocklistRepository
 )
-from shared.models.common import Protocol, FirewallAction, AlertSeverity, AlertType
+from controller.core.email_manager import EmailManager
+from shared.models.common import Protocol, FirewallAction, AlertSeverity, AlertType, EmailBlocklistType
 
 # Ensure templates directory exists
 settings.templates_dir.mkdir(parents=True, exist_ok=True)
@@ -812,3 +816,583 @@ async def stats_summary_partial(request: Request, db: Session = Depends(get_db))
         "request": request,
         "stats": summary
     })
+
+
+# ============================================================================
+# Email Proxy Routes
+# ============================================================================
+
+@router.get("/email", response_class=HTMLResponse)
+async def email_page(request: Request, db: Session = Depends(get_db)):
+    """Email proxy management page."""
+    config_repo = EmailConfigRepository(db)
+    user_repo = EmailUserRepository(db)
+    blocklist_repo = EmailBlocklistRepository(db)
+    agent_repo = AgentRepository(db)
+
+    config = config_repo.get_global()
+    configs = config_repo.get_all()
+    users = user_repo.get_all()
+    blocklist = blocklist_repo.get_all()
+    agents = agent_repo.get_all()
+
+    # Build deployment status list
+    deployments = []
+    for c in configs:
+        agent_hostname = None
+        if c.agent_id:
+            agent = agent_repo.get_by_id(c.agent_id)
+            if agent:
+                agent_hostname = agent.hostname
+        deployments.append({
+            "config_id": c.id,
+            "agent_id": c.agent_id,
+            "agent_hostname": agent_hostname,
+            "mailcow_host": c.mailcow_host,
+            "mailcow_port": c.mailcow_port,
+            "deployment_status": c.deployment_status.value,
+            "enabled": c.enabled
+        })
+
+    # Get SASL users and domains
+    from controller.database.repositories import EmailSaslUserRepository, EmailDomainRepository
+    sasl_repo = EmailSaslUserRepository(db)
+    domain_repo = EmailDomainRepository(db)
+
+    sasl_users = sasl_repo.get_all()
+    domains = domain_repo.get_all()
+
+    # Get cached Mailcow data
+    manager = EmailManager(db)
+    mailboxes = manager.get_cached_mailboxes()
+    aliases = manager.get_cached_aliases()
+
+    # If cache is empty and API is configured, trigger initial sync
+    if not mailboxes and not aliases and config and config.mailcow_api_url:
+        try:
+            await manager.sync_all_mailcow_data()
+            mailboxes = manager.get_cached_mailboxes()
+            aliases = manager.get_cached_aliases()
+        except Exception as e:
+            logger.warning(f"Failed to sync Mailcow data on page load: {e}")
+
+    return templates.TemplateResponse("email.html", {
+        "request": request,
+        "config": config,
+        "deployments": deployments,
+        "users": users,
+        "blocklist": blocklist,
+        "sasl_users": sasl_users,
+        "domains": domains,
+        "mailboxes": mailboxes,
+        "aliases": aliases,
+        "agents": agents,
+        "active_page": "email"
+    })
+
+
+@router.post("/email/config", response_class=HTMLResponse)
+async def save_email_config_htmx(
+    request: Request,
+    mailcow_host: str = Form(...),
+    mailcow_port: int = Form(25),
+    mailcow_api_url: str = Form(""),
+    mailcow_api_key: str = Form(""),
+    db: Session = Depends(get_db)
+):
+    """Save Mailcow configuration via htmx."""
+    config_repo = EmailConfigRepository(db)
+
+    # Check if global config exists
+    existing = config_repo.get_global()
+
+    if existing:
+        # Update existing config
+        config_repo.update(
+            existing.id,
+            mailcow_host=mailcow_host,
+            mailcow_port=mailcow_port,
+            mailcow_api_url=mailcow_api_url or None,
+            mailcow_api_key=mailcow_api_key or None
+        )
+        return HTMLResponse('<div class="text-green-500">Configuration updated</div>')
+    else:
+        # Create new config
+        config_repo.create(
+            mailcow_host=mailcow_host,
+            mailcow_port=mailcow_port,
+            mailcow_api_url=mailcow_api_url or None,
+            mailcow_api_key=mailcow_api_key or None,
+            agent_id=None,  # Global config
+            enabled=True
+        )
+        return HTMLResponse('<div class="text-green-500">Configuration saved</div>')
+
+
+@router.post("/email/deploy", response_class=HTMLResponse)
+async def deploy_email_htmx(
+    request: Request,
+    agent_ids: list = Form(default=[]),
+    db: Session = Depends(get_db)
+):
+    """Deploy email proxy to selected agents via htmx."""
+    if not agent_ids:
+        return HTMLResponse(
+            '<div class="text-red-500">Please select at least one agent</div>',
+            status_code=400
+        )
+
+    config_repo = EmailConfigRepository(db)
+    agent_repo = AgentRepository(db)
+
+    # Ensure global config exists
+    global_config = config_repo.get_global()
+    if not global_config:
+        return HTMLResponse(
+            '<div class="text-red-500">Please save Mailcow configuration first</div>',
+            status_code=400
+        )
+
+    # Create agent-specific configs and trigger deployment
+    manager = EmailManager(db)
+    results = {"success": [], "failed": []}
+
+    for agent_id in agent_ids:
+        try:
+            agent_id = int(agent_id)
+            agent = agent_repo.get_by_id(agent_id)
+            if not agent:
+                continue
+
+            # Check if agent-specific config exists
+            existing = config_repo.get_for_agent(agent_id)
+            if not existing or existing.agent_id is None:
+                # Create agent-specific config from global
+                config_repo.create(
+                    mailcow_host=global_config.mailcow_host,
+                    mailcow_port=global_config.mailcow_port,
+                    mailcow_api_url=global_config.mailcow_api_url,
+                    mailcow_api_key=global_config.mailcow_api_key,
+                    agent_id=agent_id,
+                    enabled=True
+                )
+
+            # Wait for deployment result to get actual error messages
+            success, message = await manager.deploy_to_agent(agent_id)
+            if success:
+                results["success"].append(agent.hostname)
+            else:
+                results["failed"].append(f"{agent.hostname}: {message}")
+
+        except (ValueError, TypeError) as e:
+            continue
+
+    # Build response based on results
+    if results["success"] and not results["failed"]:
+        return HTMLResponse(
+            f'<div class="text-green-500">Deployed to: {", ".join(results["success"])}</div>'
+        )
+    elif results["failed"] and not results["success"]:
+        error_details = "; ".join(results["failed"])
+        return HTMLResponse(
+            f'<div class="text-red-500">Deployment failed: {error_details}</div>',
+            status_code=200  # Return 200 so HTMX shows the error
+        )
+    elif results["success"] and results["failed"]:
+        error_details = "; ".join(results["failed"])
+        return HTMLResponse(
+            f'<div class="text-yellow-500">Partial success - Deployed: {", ".join(results["success"])}. '
+            f'Failed: {error_details}</div>'
+        )
+    else:
+        return HTMLResponse(
+            '<div class="text-red-500">No valid agents selected</div>',
+            status_code=400
+        )
+
+
+@router.post("/email/users", response_class=HTMLResponse)
+async def create_email_user_htmx(
+    request: Request,
+    email_address: str = Form(...),
+    display_name: str = Form(""),
+    agent_id: str = Form(""),
+    create_mailcow_mailbox: str = Form(""),
+    db: Session = Depends(get_db)
+):
+    """Create email user via htmx."""
+    user_repo = EmailUserRepository(db)
+    agent_repo = AgentRepository(db)
+    manager = EmailManager(db)
+
+    # Check if user already exists
+    if user_repo.get_by_email(email_address):
+        return HTMLResponse(
+            '<div class="text-red-500">Email user already exists</div>',
+            status_code=400
+        )
+
+    parsed_agent_id = int(agent_id) if agent_id else None
+    should_create_mailbox = create_mailcow_mailbox == "true"
+
+    mailcow_mailbox_id = None
+    generated_password = None
+
+    if should_create_mailbox:
+        mailcow_mailbox_id, generated_password = await manager.create_mailcow_mailbox(
+            email_address,
+            display_name or None
+        )
+
+    user_repo.create(
+        email_address=email_address,
+        display_name=display_name or None,
+        mailcow_mailbox_id=mailcow_mailbox_id,
+        agent_id=parsed_agent_id,
+        enabled=True
+    )
+
+    # Return updated users list
+    users = user_repo.get_all()
+    agents = agent_repo.get_all()
+
+    response = templates.TemplateResponse("partials/email_users_table.html", {
+        "request": request,
+        "users": users,
+        "agents": agents
+    })
+
+    if generated_password:
+        # Use HX-Trigger to pass password to frontend via JSON event
+        import json
+        response.headers["HX-Trigger"] = json.dumps({
+            "showPassword": {"password": generated_password, "email": email_address}
+        })
+
+    return response
+
+
+@router.delete("/email/users/{user_id}", response_class=HTMLResponse)
+async def delete_email_user_htmx(user_id: int, db: Session = Depends(get_db)):
+    """Delete email user via htmx."""
+    repo = EmailUserRepository(db)
+    if not repo.delete(user_id):
+        raise HTTPException(status_code=404)
+    return HTMLResponse("")
+
+
+@router.post("/email/users/{user_id}/toggle", response_class=HTMLResponse)
+async def toggle_email_user_htmx(request: Request, user_id: int, db: Session = Depends(get_db)):
+    """Toggle email user enabled status via htmx."""
+    user_repo = EmailUserRepository(db)
+    agent_repo = AgentRepository(db)
+
+    user = user_repo.get_by_id(user_id)
+    if not user:
+        raise HTTPException(status_code=404)
+
+    user_repo.update(user_id, enabled=not user.enabled)
+
+    # Return updated users list
+    users = user_repo.get_all()
+    agents = agent_repo.get_all()
+    return templates.TemplateResponse("partials/email_users_table.html", {
+        "request": request,
+        "users": users,
+        "agents": agents
+    })
+
+
+@router.post("/email/blocklist", response_class=HTMLResponse)
+async def add_email_blocklist_htmx(
+    request: Request,
+    block_type: str = Form(...),
+    value: str = Form(...),
+    reason: str = Form(""),
+    db: Session = Depends(get_db)
+):
+    """Add entry to email blocklist via htmx."""
+    repo = EmailBlocklistRepository(db)
+
+    email_block_type = EmailBlocklistType(block_type)
+
+    if repo.exists(email_block_type, value):
+        return HTMLResponse(
+            '<div class="text-red-500">Entry already exists in blocklist</div>',
+            status_code=400
+        )
+
+    repo.add(email_block_type, value, reason or None)
+
+    # Return updated blocklist
+    blocklist = repo.get_all()
+    return templates.TemplateResponse("partials/email_blocklist_table.html", {
+        "request": request,
+        "blocklist": blocklist
+    })
+
+
+@router.delete("/email/blocklist/{entry_id}", response_class=HTMLResponse)
+async def remove_email_blocklist_htmx(entry_id: int, db: Session = Depends(get_db)):
+    """Remove entry from email blocklist via htmx."""
+    repo = EmailBlocklistRepository(db)
+    if not repo.remove(entry_id):
+        raise HTTPException(status_code=404)
+    return HTMLResponse("")
+
+
+@router.post("/email/apply", response_class=HTMLResponse)
+async def apply_email_config_htmx(request: Request, db: Session = Depends(get_db)):
+    """Push email config sync to all deployed agents."""
+    manager = EmailManager(db)
+    results = await manager.sync_all_agents()
+
+    if results["failed"] == 0 and results["success"] > 0:
+        return HTMLResponse(f'<div class="text-green-500">Synced {results["success"]} agent(s)</div>')
+    elif results["success"] == 0 and results["failed"] > 0:
+        return HTMLResponse(f'<div class="text-red-500">Failed to sync {results["failed"]} agent(s)</div>')
+    elif results["success"] == 0 and results["failed"] == 0:
+        return HTMLResponse('<div class="text-yellow-500">No deployed agents to sync</div>')
+    else:
+        return HTMLResponse(
+            f'<div class="text-yellow-500">Synced {results["success"]}, failed {results["failed"]} agent(s)</div>'
+        )
+
+
+# =============================================================================
+# SASL User Routes
+# =============================================================================
+
+@router.post("/email/sasl", response_class=HTMLResponse)
+async def create_sasl_user_htmx(
+    request: Request,
+    username: str = Form(...),
+    password: str = Form(...),
+    agent_id: str = Form(""),
+    db: Session = Depends(get_db)
+):
+    """Create SASL user via htmx."""
+    from controller.database.repositories import EmailSaslUserRepository
+    sasl_repo = EmailSaslUserRepository(db)
+    agent_repo = AgentRepository(db)
+    manager = EmailManager(db)
+
+    # Check if user already exists
+    if sasl_repo.get_by_username(username):
+        return HTMLResponse(
+            '<div class="text-red-500">SASL user already exists</div>',
+            status_code=400
+        )
+
+    parsed_agent_id = int(agent_id) if agent_id else None
+
+    user, _ = manager.create_sasl_user(username, password, parsed_agent_id)
+
+    # Return updated SASL users list
+    sasl_users = sasl_repo.get_all()
+    agents = agent_repo.get_all()
+    return templates.TemplateResponse("partials/email_sasl_table.html", {
+        "request": request,
+        "sasl_users": sasl_users,
+        "agents": agents
+    })
+
+
+@router.delete("/email/sasl/{user_id}", response_class=HTMLResponse)
+async def delete_sasl_user_htmx(user_id: int, db: Session = Depends(get_db)):
+    """Delete SASL user via htmx."""
+    manager = EmailManager(db)
+    if not manager.delete_sasl_user(user_id):
+        raise HTTPException(status_code=404)
+    return HTMLResponse("")
+
+
+@router.post("/email/sasl/{user_id}/toggle", response_class=HTMLResponse)
+async def toggle_sasl_user_htmx(request: Request, user_id: int, db: Session = Depends(get_db)):
+    """Toggle SASL user enabled status via htmx."""
+    from controller.database.repositories import EmailSaslUserRepository
+    sasl_repo = EmailSaslUserRepository(db)
+    agent_repo = AgentRepository(db)
+    manager = EmailManager(db)
+
+    user = manager.toggle_sasl_user(user_id)
+    if not user:
+        raise HTTPException(status_code=404)
+
+    # Return updated SASL users list
+    sasl_users = sasl_repo.get_all()
+    agents = agent_repo.get_all()
+    return templates.TemplateResponse("partials/email_sasl_table.html", {
+        "request": request,
+        "sasl_users": sasl_users,
+        "agents": agents
+    })
+
+
+@router.post("/email/sasl/{user_id}/reset", response_class=HTMLResponse)
+async def reset_sasl_password_htmx(request: Request, user_id: int, db: Session = Depends(get_db)):
+    """Reset SASL user password via htmx."""
+    from controller.database.repositories import EmailSaslUserRepository
+    manager = EmailManager(db)
+
+    user, new_password = manager.reset_sasl_password(user_id)
+    if not user:
+        raise HTTPException(status_code=404)
+
+    import json
+    response = HTMLResponse(f'<div class="text-green-500">Password reset for {user.username}</div>')
+    response.headers["HX-Trigger"] = json.dumps({
+        "showPassword": {"password": new_password, "email": user.username}
+    })
+    return response
+
+
+# =============================================================================
+# Domain Routes
+# =============================================================================
+
+@router.post("/email/domains", response_class=HTMLResponse)
+async def create_domain_htmx(
+    request: Request,
+    domain: str = Form(...),
+    db: Session = Depends(get_db)
+):
+    """Create relay domain via htmx."""
+    from controller.database.repositories import EmailDomainRepository
+    domain_repo = EmailDomainRepository(db)
+    manager = EmailManager(db)
+
+    # Check if domain already exists
+    if domain_repo.exists(domain):
+        return HTMLResponse(
+            '<div class="text-red-500">Domain already exists</div>',
+            status_code=400
+        )
+
+    manager.create_domain(domain)
+
+    # Return updated domains list
+    domains = domain_repo.get_all()
+    return templates.TemplateResponse("partials/email_domains_table.html", {
+        "request": request,
+        "domains": domains
+    })
+
+
+@router.delete("/email/domains/{domain_id}", response_class=HTMLResponse)
+async def delete_domain_htmx(domain_id: int, db: Session = Depends(get_db)):
+    """Delete relay domain via htmx."""
+    manager = EmailManager(db)
+    if not manager.delete_domain(domain_id):
+        raise HTTPException(status_code=404)
+    return HTMLResponse("")
+
+
+@router.post("/email/domains/{domain_id}/toggle", response_class=HTMLResponse)
+async def toggle_domain_htmx(request: Request, domain_id: int, db: Session = Depends(get_db)):
+    """Toggle domain enabled status via htmx."""
+    from controller.database.repositories import EmailDomainRepository
+    domain_repo = EmailDomainRepository(db)
+    manager = EmailManager(db)
+
+    domain = manager.toggle_domain(domain_id)
+    if not domain:
+        raise HTTPException(status_code=404)
+
+    # Return updated domains list
+    domains = domain_repo.get_all()
+    return templates.TemplateResponse("partials/email_domains_table.html", {
+        "request": request,
+        "domains": domains
+    })
+
+
+@router.post("/email/domains/sync", response_class=HTMLResponse)
+async def sync_mailcow_domains_htmx(request: Request, db: Session = Depends(get_db)):
+    """Sync domains from Mailcow via htmx."""
+    from controller.database.repositories import EmailDomainRepository
+    domain_repo = EmailDomainRepository(db)
+    manager = EmailManager(db)
+
+    count = await manager.sync_mailcow_domains()
+
+    if count > 0:
+        domains = domain_repo.get_all()
+        response = templates.TemplateResponse("partials/email_domains_table.html", {
+            "request": request,
+            "domains": domains
+        })
+        return response
+    else:
+        return HTMLResponse('<div class="text-yellow-500">No domains found or Mailcow API not configured</div>')
+
+
+# =============================================================================
+# Mailcow Data Routes
+# =============================================================================
+
+@router.get("/email/mailcow/mailboxes", response_class=HTMLResponse)
+async def get_mailcow_mailboxes_htmx(request: Request, db: Session = Depends(get_db)):
+    """Fetch, sync and display Mailcow mailboxes via htmx."""
+    manager = EmailManager(db)
+    # Sync from Mailcow (updates cache)
+    await manager.sync_mailcow_mailboxes()
+    # Return cached data
+    mailboxes = manager.get_cached_mailboxes()
+
+    return templates.TemplateResponse("partials/email_mailcow_mailboxes.html", {
+        "request": request,
+        "mailboxes": mailboxes
+    })
+
+
+@router.get("/email/mailcow/aliases", response_class=HTMLResponse)
+async def get_mailcow_aliases_htmx(request: Request, db: Session = Depends(get_db)):
+    """Fetch, sync and display Mailcow aliases via htmx."""
+    manager = EmailManager(db)
+    # Sync from Mailcow (updates cache)
+    await manager.sync_mailcow_aliases()
+    # Return cached data
+    aliases = manager.get_cached_aliases()
+
+    return templates.TemplateResponse("partials/email_mailcow_aliases.html", {
+        "request": request,
+        "aliases": aliases
+    })
+
+
+@router.post("/email/mailcow/aliases", response_class=HTMLResponse)
+async def create_mailcow_alias_htmx(
+    request: Request,
+    address: str = Form(...),
+    goto: str = Form(...),
+    db: Session = Depends(get_db)
+):
+    """Create Mailcow alias via htmx."""
+    manager = EmailManager(db)
+    success, message = await manager.create_mailcow_alias(address, goto)
+
+    if success:
+        # Sync and return cached aliases
+        await manager.sync_mailcow_aliases()
+        aliases = manager.get_cached_aliases()
+        return templates.TemplateResponse("partials/email_mailcow_aliases.html", {
+            "request": request,
+            "aliases": aliases
+        })
+    else:
+        return HTMLResponse(f'<div class="text-red-500">{message}</div>', status_code=400)
+
+
+@router.delete("/email/mailcow/aliases/{alias_id}", response_class=HTMLResponse)
+async def delete_mailcow_alias_htmx(alias_id: int, db: Session = Depends(get_db)):
+    """Delete Mailcow alias via htmx."""
+    manager = EmailManager(db)
+    success, message = await manager.delete_mailcow_alias(alias_id)
+
+    if not success:
+        return HTMLResponse(f'<div class="text-red-500">{message}</div>', status_code=400)
+
+    # Sync cache after delete
+    await manager.sync_mailcow_aliases()
+    return HTMLResponse("")

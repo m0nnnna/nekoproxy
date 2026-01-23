@@ -9,6 +9,7 @@ from sqlalchemy import func
 from controller.database.repositories import AgentRepository, ServiceAssignmentRepository, BlocklistRepository, FirewallRuleRepository
 from controller.database.models import Agent, FirewallRule, ServiceAssignment, Service, BlocklistEntry
 from shared.models import AgentConfig, AgentRegistration, AgentHeartbeat, ServiceResponse, FirewallRuleResponse
+from shared.models.email import AgentEmailConfig
 from controller.config import settings
 
 logger = logging.getLogger(__name__)
@@ -163,14 +164,27 @@ class AgentManager:
             for rule in firewall_rules_db
         ]
 
+        # Get email config if deployed
+        email_config = self._get_email_config(agent_id)
+
         return AgentConfig(
             agent_id=agent_id,
             config_version=self._compute_config_version(agent_id),
             services=services,
             blocklist=blocklist,
             firewall_rules=firewall_rules,
+            email_config=email_config,
             heartbeat_interval=settings.heartbeat_interval
         )
+
+    def _get_email_config(self, agent_id: int) -> Optional[AgentEmailConfig]:
+        """Build email configuration for an agent."""
+        from controller.core.email_manager import EmailManager
+        email_manager = EmailManager(self.db)
+        email_config = email_manager.get_agent_email_config(agent_id)
+        if email_config and email_config.enabled:
+            return email_config
+        return None
 
     def get_healthy_agents(self) -> list[Agent]:
         """Get all healthy agents."""

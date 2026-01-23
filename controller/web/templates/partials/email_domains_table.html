@@ -1,0 +1,45 @@
+{% for domain in domains %}
+<tr>
+    <td class="px-6 py-4 whitespace-nowrap">
+        <button hx-post="/email/domains/{{ domain.id }}/toggle"
+                hx-target="#domains-table"
+                hx-swap="innerHTML"
+                class="text-sm {% if domain.enabled %}text-green-600{% else %}text-gray-400{% endif %}">
+            {% if domain.enabled %}
+            <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/>
+            </svg>
+            {% else %}
+            <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"/>
+            </svg>
+            {% endif %}
+        </button>
+    </td>
+    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ domain.domain }}</td>
+    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+        {% if domain.mailcow_managed %}
+            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                Mailcow
+            </span>
+        {% else %}
+            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
+                Manual
+            </span>
+        {% endif %}
+    </td>
+    <td class="px-6 py-4 whitespace-nowrap text-sm">
+        <button hx-delete="/email/domains/{{ domain.id }}"
+                hx-target="closest tr"
+                hx-swap="outerHTML"
+                hx-confirm="Delete domain {{ domain.domain }}?"
+                class="text-red-600 hover:text-red-800">
+            Delete
+        </button>
+    </td>
+</tr>
+{% else %}
+<tr>
+    <td colspan="4" class="px-6 py-4 text-center text-gray-500">No relay domains configured</td>
+</tr>
+{% endfor %}

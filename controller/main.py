@@ -7,7 +7,7 @@ from fastapi.templating import Jinja2Templates
 
 from controller.config import settings
 from controller.database.database import engine, Base
-from controller.api.v1 import agents, services, assignments, stats, blocklist, firewall, alerts
+from controller.api.v1 import agents, services, assignments, stats, blocklist, firewall, alerts, email
 from controller.web import routes as web_routes
 from controller.core.health_monitor import HealthMonitor
 
@@ -50,7 +50,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title=settings.app_name,
     description="Multi-agent proxy service controller",
-    version="1.0.0",
+    version="2.0.0",
     lifespan=lifespan
 )
 
@@ -66,6 +66,7 @@ app.include_router(stats.router, prefix="/api/v1/stats", tags=["stats"])
 app.include_router(blocklist.router, prefix="/api/v1/blocklist", tags=["blocklist"])
 app.include_router(firewall.router, prefix="/api/v1/firewall", tags=["firewall"])
 app.include_router(alerts.router, prefix="/api/v1/alerts", tags=["alerts"])
+app.include_router(email.router, prefix="/api/v1/email", tags=["email"])
 
 # Include web routes
 app.include_router(web_routes.router, tags=["web"])

@@ -3,7 +3,7 @@ from sqlalchemy import Column, Integer, String, Boolean, Float, DateTime, Foreig
 from sqlalchemy.orm import relationship
 
 from .database import Base
-from shared.models.common import Protocol, HealthStatus, FirewallAction, AlertSeverity, AlertType
+from shared.models.common import Protocol, HealthStatus, FirewallAction, AlertSeverity, AlertType, EmailBlocklistType, EmailDeploymentStatus
 
 
 class Agent(Base):
@@ -18,7 +18,7 @@ class Agent(Base):
     active_connections = Column(Integer, default=0)
     cpu_percent = Column(Float, default=0.0)
     memory_percent = Column(Float, default=0.0)
-    version = Column(String(20), default="1.0.0")
+    version = Column(String(20), default="2.0.0")
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -122,3 +122,104 @@ class Alert(Base):
 
     # Relationships
     agent = relationship("Agent")
+
+
+class EmailConfig(Base):
+    """Email proxy configuration (Mailcow connection settings)."""
+    __tablename__ = "email_configs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    agent_id = Column(Integer, ForeignKey("agents.id"), nullable=True)  # NULL = global default
+    mailcow_host = Column(String(255), nullable=False)
+    mailcow_port = Column(Integer, default=25)
+    mailcow_api_url = Column(String(512), nullable=True)
+    mailcow_api_key = Column(String(255), nullable=True)
+    deployment_status = Column(SQLEnum(EmailDeploymentStatus), default=EmailDeploymentStatus.NOT_DEPLOYED)
+    enabled = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # Relationships
+    agent = relationship("Agent")
+
+
+class EmailUser(Base):
+    """Authorized email senders (Postfix address map)."""
+    __tablename__ = "email_users"
+
+    id = Column(Integer, primary_key=True, index=True)
+    email_address = Column(String(255), unique=True, nullable=False, index=True)
+    display_name = Column(String(255), nullable=True)
+    mailcow_mailbox_id = Column(String(100), nullable=True)
+    agent_id = Column(Integer, ForeignKey("agents.id"), nullable=True)  # NULL = all agents
+    enabled = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # Relationships
+    agent = relationship("Agent")
+
+
+class EmailBlocklistEntry(Base):
+    """Email blocklist entries (addresses, domains, IPs)."""
+    __tablename__ = "email_blocklist"
+
+    id = Column(Integer, primary_key=True, index=True)
+    block_type = Column(SQLEnum(EmailBlocklistType), nullable=False)
+    value = Column(String(255), nullable=False, index=True)
+    reason = Column(Text, nullable=True)
+    added_at = Column(DateTime, default=datetime.utcnow)
+
+
+class EmailSaslUser(Base):
+    """SASL authentication users for email relay."""
+    __tablename__ = "email_sasl_users"
+
+    id = Column(Integer, primary_key=True, index=True)
+    username = Column(String(255), unique=True, nullable=False, index=True)  # Usually email address
+    password_hash = Column(String(255), nullable=False)  # Stored hashed, sent to agent for sasldb
+    agent_id = Column(Integer, ForeignKey("agents.id"), nullable=True)  # NULL = all agents
+    enabled = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # Relationships
+    agent = relationship("Agent")
+
+
+class EmailDomain(Base):
+    """Email domains for relay (fetched from Mailcow or manually added)."""
+    __tablename__ = "email_domains"
+
+    id = Column(Integer, primary_key=True, index=True)
+    domain = Column(String(255), unique=True, nullable=False, index=True)
+    mailcow_managed = Column(Boolean, default=False)  # True if from Mailcow API
+    enabled = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class MailcowMailbox(Base):
+    """Cached mailbox data from Mailcow API."""
+    __tablename__ = "mailcow_mailboxes"
+
+    id = Column(Integer, primary_key=True, index=True)
+    username = Column(String(255), unique=True, nullable=False, index=True)  # Full email address
+    name = Column(String(255), nullable=True)
+    domain = Column(String(255), nullable=False)
+    quota = Column(Integer, default=0)  # Bytes
+    quota_used = Column(Integer, default=0)  # Bytes
+    active = Column(Boolean, default=True)
+    last_synced = Column(DateTime, default=datetime.utcnow)
+
+
+class MailcowAlias(Base):
+    """Cached alias data from Mailcow API."""
+    __tablename__ = "mailcow_aliases"
+
+    id = Column(Integer, primary_key=True, index=True)
+    mailcow_id = Column(Integer, unique=True, nullable=False)  # ID from Mailcow
+    address = Column(String(255), nullable=False, index=True)
+    goto = Column(Text, nullable=False)  # Comma-separated destinations
+    active = Column(Boolean, default=True)
+    last_synced = Column(DateTime, default=datetime.utcnow)

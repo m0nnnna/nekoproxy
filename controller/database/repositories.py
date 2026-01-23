@@ -3,15 +3,15 @@ from typing import Optional, List
 from sqlalchemy.orm import Session
 from sqlalchemy import and_, or_
 
-from .models import Agent, Service, ServiceAssignment, BlocklistEntry, ConnectionStat, FirewallRule, Alert
-from shared.models.common import HealthStatus, Protocol, FirewallAction, AlertSeverity, AlertType
+from .models import Agent, Service, ServiceAssignment, BlocklistEntry, ConnectionStat, FirewallRule, Alert, EmailConfig, EmailUser, EmailBlocklistEntry
+from shared.models.common import HealthStatus, Protocol, FirewallAction, AlertSeverity, AlertType, EmailBlocklistType, EmailDeploymentStatus
 
 
 class AgentRepository:
     def __init__(self, db: Session):
         self.db = db
 
-    def create(self, hostname: str, wireguard_ip: str, public_ip: Optional[str] = None, version: str = "1.0.0") -> Agent:
+    def create(self, hostname: str, wireguard_ip: str, public_ip: Optional[str] = None, version: str = "2.0.0") -> Agent:
         agent = Agent(
             hostname=hostname,
             wireguard_ip=wireguard_ip,
@@ -448,3 +448,475 @@ class AlertRepository:
                 and_(Alert.severity == severity, Alert.acknowledged == False)
             ).count()
         return counts
+
+
+class EmailConfigRepository:
+    """Repository for email proxy configuration."""
+
+    def __init__(self, db: Session):
+        self.db = db
+
+    def create(self, mailcow_host: str, mailcow_port: int = 25,
+               mailcow_api_url: Optional[str] = None, mailcow_api_key: Optional[str] = None,
+               agent_id: Optional[int] = None, enabled: bool = True) -> EmailConfig:
+        config = EmailConfig(
+            mailcow_host=mailcow_host,
+            mailcow_port=mailcow_port,
+            mailcow_api_url=mailcow_api_url,
+            mailcow_api_key=mailcow_api_key,
+            agent_id=agent_id,
+            enabled=enabled
+        )
+        self.db.add(config)
+        self.db.commit()
+        self.db.refresh(config)
+        return config
+
+    def get_by_id(self, config_id: int) -> Optional[EmailConfig]:
+        return self.db.query(EmailConfig).filter(EmailConfig.id == config_id).first()
+
+    def get_for_agent(self, agent_id: Optional[int]) -> Optional[EmailConfig]:
+        """Get config for agent. First checks agent-specific, then falls back to global."""
+        if agent_id:
+            config = self.db.query(EmailConfig).filter(EmailConfig.agent_id == agent_id).first()
+            if config:
+                return config
+        # Fall back to global config (agent_id is NULL)
+        return self.db.query(EmailConfig).filter(EmailConfig.agent_id == None).first()
+
+    def get_global(self) -> Optional[EmailConfig]:
+        """Get the global email config (agent_id is NULL)."""
+        return self.db.query(EmailConfig).filter(EmailConfig.agent_id == None).first()
+
+    def get_all(self) -> List[EmailConfig]:
+        return self.db.query(EmailConfig).all()
+
+    def get_deployed(self) -> List[EmailConfig]:
+        """Get all configs with deployed status."""
+        return self.db.query(EmailConfig).filter(
+            EmailConfig.deployment_status == EmailDeploymentStatus.DEPLOYED
+        ).all()
+
+    def update(self, config_id: int, **kwargs) -> Optional[EmailConfig]:
+        config = self.get_by_id(config_id)
+        if config:
+            for key, value in kwargs.items():
+                if hasattr(config, key) and value is not None:
+                    setattr(config, key, value)
+            self.db.commit()
+            self.db.refresh(config)
+        return config
+
+    def update_deployment_status(self, config_id: int, status: EmailDeploymentStatus) -> Optional[EmailConfig]:
+        return self.update(config_id, deployment_status=status)
+
+    def delete(self, config_id: int) -> bool:
+        config = self.get_by_id(config_id)
+        if config:
+            self.db.delete(config)
+            self.db.commit()
+            return True
+        return False
+
+
+class EmailUserRepository:
+    """Repository for authorized email senders."""
+
+    def __init__(self, db: Session):
+        self.db = db
+
+    def create(self, email_address: str, display_name: Optional[str] = None,
+               mailcow_mailbox_id: Optional[str] = None, agent_id: Optional[int] = None,
+               enabled: bool = True) -> EmailUser:
+        user = EmailUser(
+            email_address=email_address.lower(),
+            display_name=display_name,
+            mailcow_mailbox_id=mailcow_mailbox_id,
+            agent_id=agent_id,
+            enabled=enabled
+        )
+        self.db.add(user)
+        self.db.commit()
+        self.db.refresh(user)
+        return user
+
+    def get_by_id(self, user_id: int) -> Optional[EmailUser]:
+        return self.db.query(EmailUser).filter(EmailUser.id == user_id).first()
+
+    def get_by_email(self, email_address: str) -> Optional[EmailUser]:
+        return self.db.query(EmailUser).filter(
+            EmailUser.email_address == email_address.lower()
+        ).first()
+
+    def get_all(self) -> List[EmailUser]:
+        return self.db.query(EmailUser).all()
+
+    def get_enabled(self) -> List[EmailUser]:
+        return self.db.query(EmailUser).filter(EmailUser.enabled == True).all()
+
+    def get_enabled_for_agent(self, agent_id: int) -> List[EmailUser]:
+        """Get enabled users for agent (including global users where agent_id is NULL)."""
+        return self.db.query(EmailUser).filter(
+            and_(
+                EmailUser.enabled == True,
+                or_(EmailUser.agent_id == agent_id, EmailUser.agent_id == None)
+            )
+        ).all()
+
+    def get_enabled_emails(self) -> List[str]:
+        """Get list of enabled email addresses."""
+        users = self.db.query(EmailUser.email_address).filter(EmailUser.enabled == True).all()
+        return [u.email_address for u in users]
+
+    def update(self, user_id: int, **kwargs) -> Optional[EmailUser]:
+        user = self.get_by_id(user_id)
+        if user:
+            for key, value in kwargs.items():
+                if hasattr(user, key):
+                    setattr(user, key, value)
+            self.db.commit()
+            self.db.refresh(user)
+        return user
+
+    def delete(self, user_id: int) -> bool:
+        user = self.get_by_id(user_id)
+        if user:
+            self.db.delete(user)
+            self.db.commit()
+            return True
+        return False
+
+
+class EmailBlocklistRepository:
+    """Repository for email blocklist entries."""
+
+    def __init__(self, db: Session):
+        self.db = db
+
+    def add(self, block_type: EmailBlocklistType, value: str,
+            reason: Optional[str] = None) -> EmailBlocklistEntry:
+        entry = EmailBlocklistEntry(
+            block_type=block_type,
+            value=value.lower(),
+            reason=reason
+        )
+        self.db.add(entry)
+        self.db.commit()
+        self.db.refresh(entry)
+        return entry
+
+    def get_by_id(self, entry_id: int) -> Optional[EmailBlocklistEntry]:
+        return self.db.query(EmailBlocklistEntry).filter(
+            EmailBlocklistEntry.id == entry_id
+        ).first()
+
+    def exists(self, block_type: EmailBlocklistType, value: str) -> bool:
+        return self.db.query(EmailBlocklistEntry).filter(
+            and_(
+                EmailBlocklistEntry.block_type == block_type,
+                EmailBlocklistEntry.value == value.lower()
+            )
+        ).first() is not None
+
+    def get_all(self) -> List[EmailBlocklistEntry]:
+        return self.db.query(EmailBlocklistEntry).all()
+
+    def get_by_type(self, block_type: EmailBlocklistType) -> List[EmailBlocklistEntry]:
+        return self.db.query(EmailBlocklistEntry).filter(
+            EmailBlocklistEntry.block_type == block_type
+        ).all()
+
+    def get_addresses(self) -> List[str]:
+        """Get all blocked email addresses."""
+        entries = self.db.query(EmailBlocklistEntry.value).filter(
+            EmailBlocklistEntry.block_type == EmailBlocklistType.ADDRESS
+        ).all()
+        return [e.value for e in entries]
+
+    def get_domains(self) -> List[str]:
+        """Get all blocked domains."""
+        entries = self.db.query(EmailBlocklistEntry.value).filter(
+            EmailBlocklistEntry.block_type == EmailBlocklistType.DOMAIN
+        ).all()
+        return [e.value for e in entries]
+
+    def get_ips(self) -> List[str]:
+        """Get all blocked IPs and IP ranges."""
+        entries = self.db.query(EmailBlocklistEntry.value).filter(
+            or_(
+                EmailBlocklistEntry.block_type == EmailBlocklistType.IP,
+                EmailBlocklistEntry.block_type == EmailBlocklistType.IP_RANGE
+            )
+        ).all()
+        return [e.value for e in entries]
+
+    def remove(self, entry_id: int) -> bool:
+        entry = self.get_by_id(entry_id)
+        if entry:
+            self.db.delete(entry)
+            self.db.commit()
+            return True
+        return False
+
+
+class EmailSaslUserRepository:
+    """Repository for SASL authentication users."""
+
+    def __init__(self, db: Session):
+        self.db = db
+
+    def create(self, username: str, password_hash: str,
+               agent_id: Optional[int] = None, enabled: bool = True) -> "EmailSaslUser":
+        from .models import EmailSaslUser
+        user = EmailSaslUser(
+            username=username.lower(),
+            password_hash=password_hash,
+            agent_id=agent_id,
+            enabled=enabled
+        )
+        self.db.add(user)
+        self.db.commit()
+        self.db.refresh(user)
+        return user
+
+    def get_by_id(self, user_id: int) -> Optional["EmailSaslUser"]:
+        from .models import EmailSaslUser
+        return self.db.query(EmailSaslUser).filter(EmailSaslUser.id == user_id).first()
+
+    def get_by_username(self, username: str) -> Optional["EmailSaslUser"]:
+        from .models import EmailSaslUser
+        return self.db.query(EmailSaslUser).filter(
+            EmailSaslUser.username == username.lower()
+        ).first()
+
+    def get_all(self) -> List["EmailSaslUser"]:
+        from .models import EmailSaslUser
+        return self.db.query(EmailSaslUser).all()
+
+    def get_enabled(self) -> List["EmailSaslUser"]:
+        from .models import EmailSaslUser
+        return self.db.query(EmailSaslUser).filter(EmailSaslUser.enabled == True).all()
+
+    def get_enabled_for_agent(self, agent_id: int) -> List["EmailSaslUser"]:
+        """Get enabled SASL users for agent (including global users)."""
+        from .models import EmailSaslUser
+        return self.db.query(EmailSaslUser).filter(
+            and_(
+                EmailSaslUser.enabled == True,
+                or_(EmailSaslUser.agent_id == agent_id, EmailSaslUser.agent_id == None)
+            )
+        ).all()
+
+    def update(self, user_id: int, **kwargs) -> Optional["EmailSaslUser"]:
+        user = self.get_by_id(user_id)
+        if user:
+            for key, value in kwargs.items():
+                if hasattr(user, key):
+                    setattr(user, key, value)
+            self.db.commit()
+            self.db.refresh(user)
+        return user
+
+    def update_password(self, user_id: int, password_hash: str) -> Optional["EmailSaslUser"]:
+        return self.update(user_id, password_hash=password_hash)
+
+    def delete(self, user_id: int) -> bool:
+        user = self.get_by_id(user_id)
+        if user:
+            self.db.delete(user)
+            self.db.commit()
+            return True
+        return False
+
+
+class EmailDomainRepository:
+    """Repository for email relay domains."""
+
+    def __init__(self, db: Session):
+        self.db = db
+
+    def create(self, domain: str, mailcow_managed: bool = False,
+               enabled: bool = True) -> "EmailDomain":
+        from .models import EmailDomain
+        entry = EmailDomain(
+            domain=domain.lower(),
+            mailcow_managed=mailcow_managed,
+            enabled=enabled
+        )
+        self.db.add(entry)
+        self.db.commit()
+        self.db.refresh(entry)
+        return entry
+
+    def get_by_id(self, domain_id: int) -> Optional["EmailDomain"]:
+        from .models import EmailDomain
+        return self.db.query(EmailDomain).filter(EmailDomain.id == domain_id).first()
+
+    def get_by_domain(self, domain: str) -> Optional["EmailDomain"]:
+        from .models import EmailDomain
+        return self.db.query(EmailDomain).filter(
+            EmailDomain.domain == domain.lower()
+        ).first()
+
+    def exists(self, domain: str) -> bool:
+        return self.get_by_domain(domain) is not None
+
+    def get_all(self) -> List["EmailDomain"]:
+        from .models import EmailDomain
+        return self.db.query(EmailDomain).all()
+
+    def get_enabled(self) -> List["EmailDomain"]:
+        from .models import EmailDomain
+        return self.db.query(EmailDomain).filter(EmailDomain.enabled == True).all()
+
+    def get_enabled_domains(self) -> List[str]:
+        """Get list of enabled domain names."""
+        from .models import EmailDomain
+        domains = self.db.query(EmailDomain.domain).filter(EmailDomain.enabled == True).all()
+        return [d.domain for d in domains]
+
+    def update(self, domain_id: int, **kwargs) -> Optional["EmailDomain"]:
+        domain = self.get_by_id(domain_id)
+        if domain:
+            for key, value in kwargs.items():
+                if hasattr(domain, key):
+                    setattr(domain, key, value)
+            self.db.commit()
+            self.db.refresh(domain)
+        return domain
+
+    def sync_from_mailcow(self, domains: List[str]):
+        """Sync domains from Mailcow API - add new ones, mark existing as mailcow_managed."""
+        from .models import EmailDomain
+        for domain_name in domains:
+            existing = self.get_by_domain(domain_name)
+            if existing:
+                if not existing.mailcow_managed:
+                    existing.mailcow_managed = True
+                    self.db.commit()
+            else:
+                self.create(domain_name, mailcow_managed=True, enabled=True)
+
+    def delete(self, domain_id: int) -> bool:
+        domain = self.get_by_id(domain_id)
+        if domain:
+            self.db.delete(domain)
+            self.db.commit()
+            return True
+        return False
+
+
+class MailcowMailboxRepository:
+    """Repository for cached Mailcow mailbox data."""
+
+    def __init__(self, db: Session):
+        self.db = db
+
+    def sync(self, mailboxes_data: list):
+        """Sync mailboxes from Mailcow API response."""
+        from .models import MailcowMailbox
+        now = datetime.utcnow()
+
+        # Get existing usernames for comparison
+        existing = {m.username: m for m in self.db.query(MailcowMailbox).all()}
+        seen = set()
+
+        for mb in mailboxes_data:
+            username = mb.get("username", "")
+            if not username:
+                continue
+            seen.add(username)
+
+            if username in existing:
+                # Update existing
+                mailbox = existing[username]
+                mailbox.name = mb.get("name", "")
+                mailbox.domain = mb.get("domain", "")
+                mailbox.quota = mb.get("quota", 0)
+                mailbox.quota_used = mb.get("quota_used", 0)
+                mailbox.active = mb.get("active") in (1, "1", True)
+                mailbox.last_synced = now
+            else:
+                # Create new
+                mailbox = MailcowMailbox(
+                    username=username,
+                    name=mb.get("name", ""),
+                    domain=mb.get("domain", ""),
+                    quota=mb.get("quota", 0),
+                    quota_used=mb.get("quota_used", 0),
+                    active=mb.get("active") in (1, "1", True),
+                    last_synced=now
+                )
+                self.db.add(mailbox)
+
+        # Remove mailboxes that no longer exist in Mailcow
+        for username, mailbox in existing.items():
+            if username not in seen:
+                self.db.delete(mailbox)
+
+        self.db.commit()
+
+    def get_all(self) -> list:
+        from .models import MailcowMailbox
+        return self.db.query(MailcowMailbox).all()
+
+    def clear(self):
+        from .models import MailcowMailbox
+        self.db.query(MailcowMailbox).delete()
+        self.db.commit()
+
+
+class MailcowAliasRepository:
+    """Repository for cached Mailcow alias data."""
+
+    def __init__(self, db: Session):
+        self.db = db
+
+    def sync(self, aliases_data: list):
+        """Sync aliases from Mailcow API response."""
+        from .models import MailcowAlias
+        now = datetime.utcnow()
+
+        # Get existing by mailcow_id
+        existing = {a.mailcow_id: a for a in self.db.query(MailcowAlias).all()}
+        seen = set()
+
+        for alias in aliases_data:
+            mailcow_id = alias.get("id")
+            if not mailcow_id:
+                continue
+            seen.add(mailcow_id)
+
+            if mailcow_id in existing:
+                # Update existing
+                entry = existing[mailcow_id]
+                entry.address = alias.get("address", "")
+                entry.goto = alias.get("goto", "")
+                entry.active = alias.get("active") in (1, "1", True)
+                entry.last_synced = now
+            else:
+                # Create new
+                entry = MailcowAlias(
+                    mailcow_id=mailcow_id,
+                    address=alias.get("address", ""),
+                    goto=alias.get("goto", ""),
+                    active=alias.get("active") in (1, "1", True),
+                    last_synced=now
+                )
+                self.db.add(entry)
+
+        # Remove aliases that no longer exist in Mailcow
+        for mailcow_id, entry in existing.items():
+            if mailcow_id not in seen:
+                self.db.delete(entry)
+
+        self.db.commit()
+
+    def get_all(self) -> list:
+        from .models import MailcowAlias
+        return self.db.query(MailcowAlias).all()
+
+    def clear(self):
+        from .models import MailcowAlias
+        self.db.query(MailcowAlias).delete()
+        self.db.commit()

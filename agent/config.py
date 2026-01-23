@@ -13,7 +13,7 @@ class AgentSettings(BaseSettings):
     hostname: str = get_hostname()
     wireguard_ip: str = "10.0.0.1"  # Must be configured
     public_ip: Optional[str] = None
-    version: str = "1.0.0"
+    version: str = "2.0.0"
 
     # Controller connection
     controller_url: str = "http://localhost:8001"
