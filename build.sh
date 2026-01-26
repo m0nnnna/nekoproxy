@@ -1,261 +1,219 @@
-#!/bin/bash
+#!/usr/bin/env bash
 #
-# NekoProxy Build Script for Linux (Ubuntu)
+# NekoProxy Build Script – Linux (Ubuntu/Debian)
 #
-# This script builds the agent and controller for Linux.
-# Agent: Linux only
-# Controller: Linux (run build.py on Windows for Windows build)
+# Builds the agent and/or controller binaries using PyInstaller.
+# Agent:    Linux only
+# Controller: Linux build here (for Windows controller → use build.py on Windows)
 #
 # Usage:
-#   ./build.sh [agent|controller|all] [--clean]
+#   ./build.sh [all|agent|controller] [--clean] [--help]
 #
 # Examples:
-#   ./build.sh all         # Build both agent and controller
-#   ./build.sh agent       # Build agent only
-#   ./build.sh controller  # Build controller only
-#   ./build.sh --clean     # Clean build artifacts
+#   ./build.sh all                # Build both
+#   ./build.sh agent              # Agent only
+#   ./build.sh controller --clean # Clean + build controller
+#   ./build.sh --clean            # Just clean
 #
 
-set -e
+set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-cd "$SCRIPT_DIR"
+cd "$SCRIPT_DIR" || exit 1
 
-# Virtual environment
-VENV_DIR="$SCRIPT_DIR/.venv"
+# ────────────────────────────────────────────────
+#  Colors & Output helpers
+# ────────────────────────────────────────────────
 
-# Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
-NC='\033[0m' # No Color
+NC='\033[0m'
 
-print_header() {
-    echo ""
-    echo "============================================================"
-    echo -e "${GREEN}$1${NC}"
-    echo "============================================================"
+die()       { echo -e "${RED}Error:${NC} $*" >&2; exit 1; }
+warn()      { echo -e "${YELLOW}Warning:${NC} $*" >&2; }
+success()   { echo -e "${GREEN}$*${NC}"; }
+header()    { echo ""; echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"; echo "$*"; echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"; }
+
+# ────────────────────────────────────────────────
+#  Configuration
+# ────────────────────────────────────────────────
+
+VENV_DIR="$SCRIPT_DIR/.venv"
+DIST_DIR="$SCRIPT_DIR/dist/linux"
+
+# ────────────────────────────────────────────────
+#  Functions
+# ────────────────────────────────────────────────
+
+check_requirements() {
+    command -v python3 >/dev/null || die "python3 not found. Install it: sudo apt install python3 python3-venv python3-pip"
 }
 
-print_warning() {
-    echo -e "${YELLOW}Warning: $1${NC}"
-}
+create_or_fix_venv() {
+    header "Preparing virtual environment"
 
-print_error() {
-    echo -e "${RED}Error: $1${NC}"
-}
-
-# Check if running on Linux
-check_platform() {
-    if [[ "$OSTYPE" != "linux-gnu"* ]]; then
-        print_error "This script is intended for Linux (Ubuntu)."
-        print_warning "For Windows builds, use: python build.py controller"
-        exit 1
-    fi
-}
-
-# Setup virtual environment
-setup_venv() {
-    print_header "Setting up virtual environment..."
-
-    # Check for Python 3
-    if ! command -v python3 &> /dev/null; then
-        print_error "Python 3 is required. Install with: sudo apt install python3 python3-pip python3-venv"
-        exit 1
-    fi
-
-    # Check for venv module
-    if ! python3 -m venv --help &> /dev/null; then
-        print_warning "python3-venv not found. Installing..."
-        sudo apt-get update
-        sudo apt-get install -y python3-venv
-    fi
-
-    # Create venv if it doesn't exist or is broken
     if [[ ! -f "$VENV_DIR/bin/activate" ]]; then
-        echo "Creating virtual environment at $VENV_DIR..."
+        echo "Creating fresh virtual environment → $VENV_DIR"
         rm -rf "$VENV_DIR" 2>/dev/null || true
-        python3 -m venv "$VENV_DIR"
-        if [[ ! -f "$VENV_DIR/bin/activate" ]]; then
-            print_error "Failed to create virtual environment"
-            exit 1
-        fi
+        python3 -m venv "$VENV_DIR" || die "Failed to create venv"
     fi
 
-    # Activate venv
-    source "$VENV_DIR/bin/activate"
-    echo "Virtual environment activated."
+    # shellcheck disable=SC1091
+    source "$VENV_DIR/bin/activate" || die "Cannot activate venv"
 
-    # Upgrade pip
-    pip install --upgrade pip -q
+    python -m pip install --quiet --upgrade pip || die "pip upgrade failed"
 
-    # Install PyInstaller if not present
-    if ! python -c "import PyInstaller" &> /dev/null; then
+    # Install PyInstaller if missing
+    python -c "import PyInstaller" 2>/dev/null || {
         echo "Installing PyInstaller..."
-        pip install pyinstaller
-    fi
+        pip install --quiet pyinstaller || die "Failed to install PyInstaller"
+    }
 
     # Install project dependencies
-    echo "Installing project dependencies..."
-    pip install -r requirements.txt -q
+    if [[ -f "requirements.txt" ]]; then
+        echo "Installing requirements.txt..."
+        pip install --quiet -r requirements.txt || die "Failed to install dependencies"
+    else
+        warn "No requirements.txt found — skipping dependency installation"
+    fi
 
-    echo "Dependencies ready."
+    success "Virtual environment ready."
 }
 
-# Clean build artifacts
-clean_build() {
-    print_header "Cleaning build artifacts..."
-    rm -rf dist/
-    rm -rf build/agent/
-    rm -rf build/controller/
+clean_build_artifacts() {
+    header "Cleaning previous build artifacts"
+
+    rm -rf dist/ build/ __pycache__ *.pyc *.pyo .pytest_cache .coverage htmlcov 2>/dev/null || true
     find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
-    find . -type f -name "*.pyc" -delete 2>/dev/null || true
-    echo "Clean complete."
+    find . -type d -name "build"       -exec rm -rf {} + 2>/dev/null || true
+    find . -type d -name "dist"        -exec rm -rf {} + 2>/dev/null || true
+
+    success "Clean finished."
 }
 
-# Ensure dist directory exists and is a directory (not a file)
-ensure_dist_dir() {
-    if [[ -f "$SCRIPT_DIR/dist" ]]; then
-        rm -f "$SCRIPT_DIR/dist"
-    fi
-    mkdir -p "$SCRIPT_DIR/dist/linux"
+prepare_dist() {
+    mkdir -p "$DIST_DIR" || die "Cannot create $DIST_DIR"
 }
 
-# Build agent
-build_agent() {
-    print_header "Building Agent for Linux..."
-    ensure_dist_dir
+build_component() {
+    local component="$1"
+    local spec_file="build/${component}.spec"
+    local output_name="nekoproxy-${component}"
+
+    [[ -f "$spec_file" ]] || die "Spec file not found: $spec_file"
+
+    header "Building $component for Linux"
+
+    prepare_dist
 
     python -m PyInstaller \
         --clean \
         --noconfirm \
-        --distpath dist/linux \
-        --workpath build/agent \
-        build/agent.spec
+        --distpath "$DIST_DIR" \
+        --workpath "build/$component" \
+        "$spec_file" || die "PyInstaller failed for $component"
 
-    if [[ -f "dist/linux/nekoproxy-agent" ]]; then
-        chmod +x dist/linux/nekoproxy-agent
-        SIZE=$(du -h dist/linux/nekoproxy-agent | cut -f1)
-        echo ""
-        echo -e "${GREEN}Agent built successfully!${NC}"
-        echo "Output: dist/linux/nekoproxy-agent ($SIZE)"
+    local binary="$DIST_DIR/$output_name"
+
+    if [[ -f "$binary" ]]; then
+        chmod +x "$binary"
+        local size
+        size=$(du -h "$binary" | cut -f1)
+        success "$component built successfully!"
+        echo "  → $binary ($size)"
     else
-        print_error "Agent build failed!"
-        return 1
+        die "$component binary not found after build: $binary"
     fi
 }
 
-# Build controller
-build_controller() {
-    print_header "Building Controller for Linux..."
-    ensure_dist_dir
+show_help() {
+    cat <<'EOF'
+NekoProxy Linux Build Script
 
-    python -m PyInstaller \
-        --clean \
-        --noconfirm \
-        --distpath dist/linux \
-        --workpath build/controller \
-        build/controller.spec
+Usage:
+  ./build.sh [all|agent|controller] [--clean] [--help]
 
-    if [[ -f "dist/linux/nekoproxy-controller" ]]; then
-        chmod +x dist/linux/nekoproxy-controller
-        SIZE=$(du -h dist/linux/nekoproxy-controller | cut -f1)
-        echo ""
-        echo -e "${GREEN}Controller built successfully!${NC}"
-        echo "Output: dist/linux/nekoproxy-controller ($SIZE)"
-    else
-        print_error "Controller build failed!"
-        return 1
-    fi
+Options:
+  all          Build both agent and controller
+  agent        Build Linux agent only
+  controller   Build Linux controller only
+  --clean      Remove build/dist artifacts first
+  --help       Show this help
+
+Note:
+  → Windows controller build: run `python build.py controller` **on Windows**
+EOF
 }
 
-# Show usage
-show_usage() {
-    echo "NekoProxy Build Script for Linux (Ubuntu)"
-    echo ""
-    echo "Usage: $0 [agent|controller|all] [--clean]"
-    echo ""
-    echo "Components:"
-    echo "  agent       Build the agent (Linux only)"
-    echo "  controller  Build the controller (Linux)"
-    echo "  all         Build both agent and controller"
-    echo ""
-    echo "Options:"
-    echo "  --clean     Clean build artifacts before building"
-    echo ""
-    echo "Examples:"
-    echo "  $0 all             # Build everything"
-    echo "  $0 agent           # Build agent only"
-    echo "  $0 --clean all     # Clean and rebuild everything"
-    echo ""
-    echo "Note: For Windows controller build, run on Windows:"
-    echo "  python build.py controller"
-}
+# ────────────────────────────────────────────────
+#  Argument parsing
+# ────────────────────────────────────────────────
 
-# Main
-main() {
-    check_platform
+BUILD_TARGET=""
+DO_CLEAN=false
 
-    COMPONENT=""
-    CLEAN=false
-
-    # Parse arguments
-    for arg in "$@"; do
-        case $arg in
-            agent|controller|all)
-                COMPONENT="$arg"
-                ;;
-            --clean)
-                CLEAN=true
-                ;;
-            -h|--help)
-                show_usage
-                exit 0
-                ;;
-            *)
-                print_error "Unknown argument: $arg"
-                show_usage
-                exit 1
-                ;;
-        esac
-    done
-
-    if [[ -z "$COMPONENT" && "$CLEAN" == false ]]; then
-        show_usage
-        exit 1
-    fi
-
-    print_header "NekoProxy Build System"
-    echo "Platform: Linux"
-    echo "Python: $(python3 --version)"
-    echo "Project: $SCRIPT_DIR"
-
-    if $CLEAN; then
-        clean_build
-    fi
-
-    if [[ -z "$COMPONENT" ]]; then
-        exit 0
-    fi
-
-    setup_venv
-
-    case $COMPONENT in
-        agent)
-            build_agent
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        all|agent|controller)
+            [[ -n "$BUILD_TARGET" ]] && die "Only one build target allowed"
+            BUILD_TARGET="$1"
             ;;
-        controller)
-            build_controller
+        --clean)
+            DO_CLEAN=true
             ;;
-        all)
-            build_agent
-            build_controller
+        -h|--help)
+            show_help
+            exit 0
+            ;;
+        *)
+            die "Unknown argument: $1"
             ;;
     esac
+    shift
+done
 
-    print_header "Build Complete!"
-    echo "Output directory: dist/linux/"
-    ls -lh dist/linux/ 2>/dev/null || true
-}
+# Default to showing help if nothing selected
+if [[ -z "$BUILD_TARGET" && "$DO_CLEAN" = false ]]; then
+    show_help
+    exit 1
+fi
 
-main "$@"
+# ────────────────────────────────────────────────
+#  Main execution
+# ────────────────────────────────────────────────
+
+header "NekoProxy Linux Build"
+echo "Directory : $SCRIPT_DIR"
+echo "Python    : $(python3 --version 2>&1 | head -n1)"
+echo "Target    : ${BUILD_TARGET:-<clean only>}"
+
+check_requirements
+
+$DO_CLEAN && clean_build_artifacts
+
+create_or_fix_venv
+
+case "$BUILD_TARGET" in
+    agent)
+        build_component "agent"
+        ;;
+    controller)
+        build_component "controller"
+        ;;
+    all)
+        build_component "agent"
+        build_component "controller"
+        ;;
+    "")
+        # only --clean was used → already done
+        ;;
+esac
+
+if [[ -n "$BUILD_TARGET" ]]; then
+    header "Build Complete"
+    echo "Output directory:"
+    ls -lh "$DIST_DIR" 2>/dev/null || echo "(directory is empty)"
+fi
+
+success "Done."
