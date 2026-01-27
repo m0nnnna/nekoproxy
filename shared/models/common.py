@@ -30,6 +30,13 @@ class AlertType(str, Enum):
     SUSPICIOUS_SCAN = "suspicious_scan"  # Port scanning detected
     AUTH_FAILURE = "auth_failure"  # Authentication failure
     RATE_LIMIT = "rate_limit"  # Too many connections
+    SSH_BRUTE_FORCE = "ssh_brute_force"  # SSH brute force attempt
+    MAIL_AUTH_FAILURE = "mail_auth_failure"  # Mail authentication failure
+    INVALID_USER = "invalid_user"  # Invalid user login attempt
+    CONNECTION_REFUSED = "connection_refused"  # Connection refused/blocked by firewall
+    MAIL_RELAY_DENIED = "mail_relay_denied"  # Unauthorized mail relay attempt
+    MAIL_SPAM_ATTEMPT = "mail_spam_attempt"  # Spam/abuse attempt detected
+    MAIL_REJECTED = "mail_rejected"  # Mail rejected (bad sender/recipient)
 
 
 class EmailBlocklistType(str, Enum):

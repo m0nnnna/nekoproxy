@@ -48,6 +48,13 @@
                 </svg>
             </span>
             {% endif %}
+            <button hx-post="/alerts/{{ item.alert.id }}/block-ip" hx-target="#alerts-table" hx-swap="innerHTML"
+                    hx-confirm="Block IP {{ item.alert.source_ip }}?"
+                    class="text-orange-600 hover:text-orange-900" title="Block IP">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"></path>
+                </svg>
+            </button>
             <button hx-delete="/alerts/{{ item.alert.id }}" hx-target="closest tr" hx-swap="outerHTML"
                     hx-confirm="Delete this alert?"
                     class="text-red-600 hover:text-red-900" title="Delete">

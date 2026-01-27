@@ -18,6 +18,7 @@ from agent.core.firewall import FirewallManager
 from agent.core.control_api import ControlAPI
 from agent.core.email_proxy import EmailProxyManager
 from agent.core.email_stats import EmailStatsCollector
+from agent.core.security_monitor import SecurityMonitor
 from shared.models import AgentConfig, AgentRegistration
 
 # Configure logging
@@ -50,6 +51,9 @@ class NekoProxyAgent:
 
         # Email stats collector (started after email proxy deployment)
         self._email_stats: Optional[EmailStatsCollector] = None
+
+        # Security monitor for brute force detection
+        self._security_monitor: Optional[SecurityMonitor] = None
 
         # Controller communication
         self._heartbeat: Optional[HeartbeatSender] = None
@@ -242,6 +246,10 @@ class NekoProxyAgent:
             await self._email_stats.start()
             logger.info("Email stats collector started (Postfix already deployed)")
 
+        # Start security monitor for brute force detection
+        self._security_monitor = SecurityMonitor(self.agent_id)
+        await self._security_monitor.start()
+
         logger.info("=" * 70)
         logger.info("NekoProxy Agent running. Press Ctrl+C to stop.")
         logger.info("=" * 70)
@@ -277,6 +285,10 @@ class NekoProxyAgent:
         # Stop email stats collector if running
         if self._email_stats:
             await self._email_stats.stop()
+
+        # Stop security monitor
+        if self._security_monitor:
+            await self._security_monitor.stop()
 
         if self._stats_reporter:
             await self._stats_reporter.stop()

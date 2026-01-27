@@ -267,12 +267,15 @@ class ConnectionStatRepository:
         self.db.commit()
         return deleted
 
-    def get_stats_summary(self, hours: int = 24) -> dict:
-        """Get aggregated statistics."""
-        cutoff = datetime.utcnow() - timedelta(hours=hours)
-        stats = self.db.query(ConnectionStat).filter(
-            ConnectionStat.timestamp >= cutoff
-        ).all()
+    def get_stats_summary(self, hours: Optional[int] = 24) -> dict:
+        """Get aggregated statistics. If hours is None, returns lifetime stats."""
+        if hours is not None:
+            cutoff = datetime.utcnow() - timedelta(hours=hours)
+            stats = self.db.query(ConnectionStat).filter(
+                ConnectionStat.timestamp >= cutoff
+            ).all()
+        else:
+            stats = self.db.query(ConnectionStat).all()
 
         total_connections = len(stats)
         total_bytes_sent = sum(s.bytes_sent for s in stats)
@@ -976,12 +979,15 @@ class EmailStatRepository:
         self.db.commit()
         return deleted
 
-    def get_stats_summary(self, hours: int = 24) -> dict:
-        """Get aggregated email statistics."""
-        cutoff = datetime.utcnow() - timedelta(hours=hours)
-        stats = self.db.query(EmailStat).filter(
-            EmailStat.timestamp >= cutoff
-        ).all()
+    def get_stats_summary(self, hours: Optional[int] = 24) -> dict:
+        """Get aggregated email statistics. If hours is None, returns lifetime stats."""
+        if hours is not None:
+            cutoff = datetime.utcnow() - timedelta(hours=hours)
+            stats = self.db.query(EmailStat).filter(
+                EmailStat.timestamp >= cutoff
+            ).all()
+        else:
+            stats = self.db.query(EmailStat).all()
 
         total_emails = len(stats)
         total_bytes_sent = sum(s.bytes_sent for s in stats)

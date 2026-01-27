@@ -325,17 +325,23 @@ async def apply_blocklist_htmx(request: Request, db: Session = Depends(get_db)):
 
 
 @router.get("/stats", response_class=HTMLResponse)
-async def stats_page(request: Request, db: Session = Depends(get_db)):
-    """Statistics page."""
+async def stats_page(request: Request, period: str = "24h", db: Session = Depends(get_db)):
+    """Statistics page with time range selection."""
     from controller.database.repositories import EmailStatRepository
 
     stat_repo = ConnectionStatRepository(db)
     email_stat_repo = EmailStatRepository(db)
 
-    summary = stat_repo.get_stats_summary(hours=24)
-    email_summary = email_stat_repo.get_stats_summary(hours=24)
-    recent = stat_repo.get_recent(hours=24, limit=100)
-    recent_emails = email_stat_repo.get_recent(hours=24, limit=100)
+    # Parse period to hours (None for lifetime)
+    period_map = {"24h": 24, "7d": 168, "30d": 720, "lifetime": None}
+    hours = period_map.get(period, 24)
+
+    summary = stat_repo.get_stats_summary(hours=hours)
+    email_summary = email_stat_repo.get_stats_summary(hours=hours)
+    # Logs always show data based on selected period (up to 100 entries)
+    log_hours = hours if hours else 720  # Default to 30 days max for logs in lifetime mode
+    recent = stat_repo.get_recent(hours=log_hours, limit=100)
+    recent_emails = email_stat_repo.get_recent(hours=log_hours, limit=100)
 
     return templates.TemplateResponse("stats.html", {
         "request": request,
@@ -343,6 +349,7 @@ async def stats_page(request: Request, db: Session = Depends(get_db)):
         "email_summary": email_summary,
         "connections": recent,
         "email_connections": recent_emails,
+        "current_period": period,
         "active_page": "stats"
     })
 
@@ -802,6 +809,45 @@ async def delete_alert_htmx(alert_id: int, db: Session = Depends(get_db)):
     return HTMLResponse("")
 
 
+@router.post("/alerts/{alert_id}/block-ip", response_class=HTMLResponse)
+async def block_ip_from_alert_htmx(request: Request, alert_id: int, db: Session = Depends(get_db)):
+    """Block IP from alert and acknowledge the alert."""
+    alert_repo = AlertRepository(db)
+    blocklist_repo = BlocklistRepository(db)
+    agent_repo = AgentRepository(db)
+
+    alert = alert_repo.get_by_id(alert_id)
+    if not alert:
+        raise HTTPException(status_code=404)
+
+    # Add IP to blocklist if not already blocked
+    if not blocklist_repo.is_blocked(alert.source_ip):
+        reason = f"Blocked from alert: {alert.alert_type.value}"
+        blocklist_repo.add(alert.source_ip, reason)
+
+    # Acknowledge the alert
+    alert_repo.acknowledge(alert_id)
+
+    # Return updated alerts list
+    alerts = alert_repo.get_all(limit=100)
+    alerts_with_agents = []
+    for a in alerts:
+        agent_hostname = None
+        if a.agent_id:
+            agent = agent_repo.get_by_id(a.agent_id)
+            if agent:
+                agent_hostname = agent.hostname
+        alerts_with_agents.append({
+            "alert": a,
+            "agent_hostname": agent_hostname
+        })
+
+    return templates.TemplateResponse("partials/alerts_table.html", {
+        "request": request,
+        "alerts": alerts_with_agents
+    })
+
+
 # HTMX partial endpoints for live updates
 @router.get("/partials/agents-status", response_class=HTMLResponse)
 async def agents_status_partial(request: Request, db: Session = Depends(get_db)):
@@ -815,10 +861,15 @@ async def agents_status_partial(request: Request, db: Session = Depends(get_db))
 
 
 @router.get("/partials/stats-summary", response_class=HTMLResponse)
-async def stats_summary_partial(request: Request, db: Session = Depends(get_db)):
+async def stats_summary_partial(request: Request, period: str = "24h", db: Session = Depends(get_db)):
     """Partial for stats summary updates."""
     stat_repo = ConnectionStatRepository(db)
-    summary = stat_repo.get_stats_summary(hours=24)
+
+    # Parse period to hours (None for lifetime)
+    period_map = {"24h": 24, "7d": 168, "30d": 720, "lifetime": None}
+    hours = period_map.get(period, 24)
+
+    summary = stat_repo.get_stats_summary(hours=hours)
     return templates.TemplateResponse("partials/stats_summary.html", {
         "request": request,
         "stats": summary

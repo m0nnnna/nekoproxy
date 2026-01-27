@@ -5,10 +5,30 @@
 {% block content %}
 <div class="flex justify-between items-center mb-6">
     <h1 class="text-2xl font-bold text-gray-900">Statistics</h1>
+    <!-- Time Range Selector -->
+    <div class="flex space-x-2">
+        <a href="/stats?period=24h"
+           class="px-3 py-1 text-sm font-medium rounded-md {{ 'bg-indigo-600 text-white' if current_period == '24h' else 'bg-gray-200 text-gray-700 hover:bg-gray-300' }}">
+            24h
+        </a>
+        <a href="/stats?period=7d"
+           class="px-3 py-1 text-sm font-medium rounded-md {{ 'bg-indigo-600 text-white' if current_period == '7d' else 'bg-gray-200 text-gray-700 hover:bg-gray-300' }}">
+            7d
+        </a>
+        <a href="/stats?period=30d"
+           class="px-3 py-1 text-sm font-medium rounded-md {{ 'bg-indigo-600 text-white' if current_period == '30d' else 'bg-gray-200 text-gray-700 hover:bg-gray-300' }}">
+            30d
+        </a>
+        <a href="/stats?period=lifetime"
+           class="px-3 py-1 text-sm font-medium rounded-md {{ 'bg-indigo-600 text-white' if current_period == 'lifetime' else 'bg-gray-200 text-gray-700 hover:bg-gray-300' }}">
+            Lifetime
+        </a>
+    </div>
 </div>
 
 <!-- Proxy Connection Stats -->
-<h2 class="text-lg font-semibold text-gray-900 mb-4">Proxy Connections (24h)</h2>
+{% set period_label = {'24h': '24h', '7d': '7 days', '30d': '30 days', 'lifetime': 'Lifetime'}[current_period] %}
+<h2 class="text-lg font-semibold text-gray-900 mb-4">Proxy Connections ({{ period_label }})</h2>
 <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
     <div class="bg-white shadow rounded-lg p-6">
         <div class="text-sm font-medium text-gray-500">Total Connections</div>
@@ -51,7 +71,7 @@
 </div>
 
 <!-- Email Proxy Stats -->
-<h2 class="text-lg font-semibold text-gray-900 mb-4">Email Proxy (24h)</h2>
+<h2 class="text-lg font-semibold text-gray-900 mb-4">Email Proxy ({{ period_label }})</h2>
 <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
     <div class="bg-white shadow rounded-lg p-6">
         <div class="text-sm font-medium text-gray-500">Emails Processed</div>
@@ -85,7 +105,7 @@
 <!-- Connection Log -->
 <div class="bg-white shadow rounded-lg overflow-hidden mb-8">
     <div class="px-6 py-4 border-b border-gray-200">
-        <h2 class="text-lg font-semibold text-gray-900">Connection Log (Last 24 hours)</h2>
+        <h2 class="text-lg font-semibold text-gray-900">Connection Log ({{ period_label }})</h2>
     </div>
     <div class="overflow-x-auto">
         <table class="min-w-full divide-y divide-gray-200">
@@ -140,7 +160,7 @@
                 {% else %}
                 <tr>
                     <td colspan="7" class="px-6 py-4 text-center text-sm text-gray-500">
-                        No connections in the last 24 hours
+                        No connections in this period
                     </td>
                 </tr>
                 {% endfor %}
@@ -152,7 +172,7 @@
 <!-- Email Log -->
 <div class="bg-white shadow rounded-lg overflow-hidden">
     <div class="px-6 py-4 border-b border-gray-200">
-        <h2 class="text-lg font-semibold text-gray-900">Email Log (Last 24 hours)</h2>
+        <h2 class="text-lg font-semibold text-gray-900">Email Log ({{ period_label }})</h2>
     </div>
     <div class="overflow-x-auto">
         <table class="min-w-full divide-y divide-gray-200">
@@ -222,7 +242,7 @@
                 {% else %}
                 <tr>
                     <td colspan="7" class="px-6 py-4 text-center text-sm text-gray-500">
-                        No email activity in the last 24 hours
+                        No email activity in this period
                     </td>
                 </tr>
                 {% endfor %}

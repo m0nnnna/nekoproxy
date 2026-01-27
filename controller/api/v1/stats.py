@@ -16,7 +16,7 @@ class StatsSummary(BaseModel):
     blocked_connections: int
     total_bytes_sent: int
     total_bytes_received: int
-    period_hours: int
+    period_hours: Optional[int]  # None for lifetime
 
 
 class EmailStatsSummary(BaseModel):
@@ -27,7 +27,7 @@ class EmailStatsSummary(BaseModel):
     bounced_emails: int
     email_bytes_sent: int
     email_bytes_received: int
-    period_hours: int
+    period_hours: Optional[int]  # None for lifetime
 
 
 class ConnectionStatResponse(BaseModel):
@@ -91,9 +91,12 @@ def report_connections(report: StatsReport, db: Session = Depends(get_db)):
 
 
 @router.get("/summary", response_model=StatsSummary)
-def get_stats_summary(hours: int = 24, db: Session = Depends(get_db)):
-    """Get aggregated statistics for the specified period."""
+def get_stats_summary(hours: Optional[int] = 24, db: Session = Depends(get_db)):
+    """Get aggregated statistics for the specified period. Use hours=0 for lifetime."""
     repo = ConnectionStatRepository(db)
+    # Treat 0 as lifetime (None)
+    if hours == 0:
+        hours = None
     return repo.get_stats_summary(hours=hours)
 
 
@@ -177,9 +180,12 @@ def report_email_stats(report: EmailStatsReport, db: Session = Depends(get_db)):
 
 
 @router.get("/email/summary", response_model=EmailStatsSummary)
-def get_email_stats_summary(hours: int = 24, db: Session = Depends(get_db)):
-    """Get aggregated email statistics for the specified period."""
+def get_email_stats_summary(hours: Optional[int] = 24, db: Session = Depends(get_db)):
+    """Get aggregated email statistics for the specified period. Use hours=0 for lifetime."""
     repo = EmailStatRepository(db)
+    # Treat 0 as lifetime (None)
+    if hours == 0:
+        hours = None
     return repo.get_stats_summary(hours=hours)
 
 

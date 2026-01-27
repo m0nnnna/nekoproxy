@@ -5,7 +5,7 @@ from pydantic import BaseModel
 
 class ConnectionStats(BaseModel):
     """Single connection statistics."""
-    service_id: int
+    service_id: Optional[int] = None  # None for firewall-blocked connections
     client_ip: str
     status: str  # "connected", "disconnected", "blocked"
     duration: Optional[float] = None  # seconds
