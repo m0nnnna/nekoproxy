@@ -327,15 +327,22 @@ async def apply_blocklist_htmx(request: Request, db: Session = Depends(get_db)):
 @router.get("/stats", response_class=HTMLResponse)
 async def stats_page(request: Request, db: Session = Depends(get_db)):
     """Statistics page."""
+    from controller.database.repositories import EmailStatRepository
+
     stat_repo = ConnectionStatRepository(db)
+    email_stat_repo = EmailStatRepository(db)
 
     summary = stat_repo.get_stats_summary(hours=24)
+    email_summary = email_stat_repo.get_stats_summary(hours=24)
     recent = stat_repo.get_recent(hours=24, limit=100)
+    recent_emails = email_stat_repo.get_recent(hours=24, limit=100)
 
     return templates.TemplateResponse("stats.html", {
         "request": request,
         "summary": summary,
+        "email_summary": email_summary,
         "connections": recent,
+        "email_connections": recent_emails,
         "active_page": "stats"
     })
 
@@ -955,7 +962,7 @@ async def deploy_email_htmx(
 
     # Create agent-specific configs and trigger deployment
     manager = EmailManager(db)
-    results = {"success": [], "failed": []}
+    results = {"success": [], "failed": [], "warnings": []}
 
     for agent_id in agent_ids:
         try:
@@ -981,6 +988,9 @@ async def deploy_email_htmx(
             success, message = await manager.deploy_to_agent(agent_id)
             if success:
                 results["success"].append(agent.hostname)
+                # Check if there's a warning (e.g., SSL not configured)
+                if message and "SSL" in message:
+                    results["warnings"].append(message)
             else:
                 results["failed"].append(f"{agent.hostname}: {message}")
 
@@ -989,8 +999,14 @@ async def deploy_email_htmx(
 
     # Build response based on results
     if results["success"] and not results["failed"]:
+        ssl_warning = ""
+        if results["warnings"]:
+            ssl_warning = (
+                '<br><span class="text-yellow-600">⚠️ SSL not configured. '
+                'Run on each agent: apt install certbot && certbot certonly --standalone -d HOSTNAME && systemctl restart postfix</span>'
+            )
         return HTMLResponse(
-            f'<div class="text-green-500">Deployed to: {", ".join(results["success"])}</div>'
+            f'<div class="text-green-500">Deployed to: {", ".join(results["success"])}{ssl_warning}</div>'
         )
     elif results["failed"] and not results["success"]:
         error_details = "; ".join(results["failed"])
@@ -1000,9 +1016,12 @@ async def deploy_email_htmx(
         )
     elif results["success"] and results["failed"]:
         error_details = "; ".join(results["failed"])
+        ssl_warning = ""
+        if results["warnings"]:
+            ssl_warning = ' ⚠️ SSL setup needed on deployed agents.'
         return HTMLResponse(
             f'<div class="text-yellow-500">Partial success - Deployed: {", ".join(results["success"])}. '
-            f'Failed: {error_details}</div>'
+            f'Failed: {error_details}{ssl_warning}</div>'
         )
     else:
         return HTMLResponse(

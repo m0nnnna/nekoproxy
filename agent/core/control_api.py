@@ -117,17 +117,21 @@ class ControlAPI:
                 )
 
             result = await self.deploy_email(hostname, mailcow_ip, mailcow_port, proxy_ip)
-            # Handle both tuple (success, error_msg) and bool return values
+            # Handle both tuple (success, message) and bool return values
             if isinstance(result, tuple):
-                success, error_msg = result
+                success, message = result
             else:
-                success, error_msg = result, None
+                success, message = result, None
 
             if success:
-                return web.json_response({"status": "ok", "message": "Email proxy deployed"})
+                response = {"status": "ok", "message": "Email proxy deployed"}
+                # Include SSL warning if present
+                if message:
+                    response["warning"] = message
+                return web.json_response(response)
             else:
                 return web.json_response(
-                    {"status": "error", "message": error_msg or "Deployment failed"},
+                    {"status": "error", "message": message or "Deployment failed"},
                     status=500
                 )
         except Exception as e:

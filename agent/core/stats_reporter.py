@@ -87,7 +87,7 @@ class StatsReporter:
         try:
             response = await self._client.post(url, json=payload)
             response.raise_for_status()
-            logger.debug(f"Reported {len(batch)} connection stats")
+            logger.info(f"Reported {len(batch)} connection stats to controller")
         except httpx.RequestError as e:
             # Put stats back in queue
             for stat in reversed(batch):

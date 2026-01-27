@@ -25,6 +25,7 @@ class Agent(Base):
     # Relationships
     connection_stats = relationship("ConnectionStat", back_populates="agent", cascade="all, delete-orphan")
     service_assignments = relationship("ServiceAssignment", back_populates="agent", cascade="all, delete-orphan")
+    email_stats = relationship("EmailStat", back_populates="agent", cascade="all, delete-orphan")
 
 
 class Service(Base):
@@ -223,3 +224,22 @@ class MailcowAlias(Base):
     goto = Column(Text, nullable=False)  # Comma-separated destinations
     active = Column(Boolean, default=True)
     last_synced = Column(DateTime, default=datetime.utcnow)
+
+
+class EmailStat(Base):
+    """Email proxy statistics."""
+    __tablename__ = "email_stats"
+
+    id = Column(Integer, primary_key=True, index=True)
+    agent_id = Column(Integer, ForeignKey("agents.id"), nullable=False)
+    timestamp = Column(DateTime, default=datetime.utcnow, index=True)
+    client_ip = Column(String(45), nullable=False)
+    sender = Column(String(255), nullable=True)  # From address
+    recipient = Column(String(255), nullable=True)  # To address
+    status = Column(String(20), nullable=False)  # delivered, blocked, deferred, bounced
+    bytes_sent = Column(Integer, default=0)
+    bytes_received = Column(Integer, default=0)
+    message_id = Column(String(255), nullable=True)
+
+    # Relationships
+    agent = relationship("Agent")

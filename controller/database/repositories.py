@@ -3,7 +3,7 @@ from typing import Optional, List
 from sqlalchemy.orm import Session
 from sqlalchemy import and_, or_
 
-from .models import Agent, Service, ServiceAssignment, BlocklistEntry, ConnectionStat, FirewallRule, Alert, EmailConfig, EmailUser, EmailBlocklistEntry
+from .models import Agent, Service, ServiceAssignment, BlocklistEntry, ConnectionStat, FirewallRule, Alert, EmailConfig, EmailUser, EmailBlocklistEntry, EmailStat
 from shared.models.common import HealthStatus, Protocol, FirewallAction, AlertSeverity, AlertType, EmailBlocklistType, EmailDeploymentStatus
 
 
@@ -920,3 +920,84 @@ class MailcowAliasRepository:
         from .models import MailcowAlias
         self.db.query(MailcowAlias).delete()
         self.db.commit()
+
+
+class EmailStatRepository:
+    """Repository for email proxy statistics."""
+
+    def __init__(self, db: Session):
+        self.db = db
+
+    def add(self, agent_id: int, client_ip: str, status: str, sender: Optional[str] = None,
+            recipient: Optional[str] = None, bytes_sent: int = 0, bytes_received: int = 0,
+            message_id: Optional[str] = None) -> EmailStat:
+        stat = EmailStat(
+            agent_id=agent_id,
+            client_ip=client_ip,
+            sender=sender,
+            recipient=recipient,
+            status=status,
+            bytes_sent=bytes_sent,
+            bytes_received=bytes_received,
+            message_id=message_id
+        )
+        self.db.add(stat)
+        self.db.commit()
+        self.db.refresh(stat)
+        return stat
+
+    def add_batch(self, stats: List[dict]) -> int:
+        """Add multiple email stats at once."""
+        count = 0
+        for stat_data in stats:
+            stat = EmailStat(**stat_data)
+            self.db.add(stat)
+            count += 1
+        self.db.commit()
+        return count
+
+    def get_recent(self, hours: int = 24, limit: int = 100) -> List[EmailStat]:
+        cutoff = datetime.utcnow() - timedelta(hours=hours)
+        return self.db.query(EmailStat).filter(
+            EmailStat.timestamp >= cutoff
+        ).order_by(EmailStat.timestamp.desc()).limit(limit).all()
+
+    def get_by_agent(self, agent_id: int, limit: int = 100) -> List[EmailStat]:
+        return self.db.query(EmailStat).filter(
+            EmailStat.agent_id == agent_id
+        ).order_by(EmailStat.timestamp.desc()).limit(limit).all()
+
+    def cleanup_old(self, days: int = 30) -> int:
+        """Delete stats older than specified days."""
+        cutoff = datetime.utcnow() - timedelta(days=days)
+        deleted = self.db.query(EmailStat).filter(
+            EmailStat.timestamp < cutoff
+        ).delete()
+        self.db.commit()
+        return deleted
+
+    def get_stats_summary(self, hours: int = 24) -> dict:
+        """Get aggregated email statistics."""
+        cutoff = datetime.utcnow() - timedelta(hours=hours)
+        stats = self.db.query(EmailStat).filter(
+            EmailStat.timestamp >= cutoff
+        ).all()
+
+        total_emails = len(stats)
+        total_bytes_sent = sum(s.bytes_sent for s in stats)
+        total_bytes_received = sum(s.bytes_received for s in stats)
+        blocked_count = sum(1 for s in stats if s.status == "blocked")
+        delivered_count = sum(1 for s in stats if s.status == "delivered")
+        deferred_count = sum(1 for s in stats if s.status == "deferred")
+        bounced_count = sum(1 for s in stats if s.status == "bounced")
+
+        return {
+            "total_emails": total_emails,
+            "blocked_emails": blocked_count,
+            "delivered_emails": delivered_count,
+            "deferred_emails": deferred_count,
+            "bounced_emails": bounced_count,
+            "email_bytes_sent": total_bytes_sent,
+            "email_bytes_received": total_bytes_received,
+            "period_hours": hours
+        }

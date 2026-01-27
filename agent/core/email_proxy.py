@@ -1,4 +1,4 @@
-"""Email proxy management using Postfix + rspamd + SASL."""
+"""Email proxy management using Postfix + SASL."""
 
 import asyncio
 import logging
@@ -23,7 +23,7 @@ class PostfixConfig:
 
 
 class EmailProxyManager:
-    """Manages Postfix + rspamd + SASL email proxy deployment and configuration."""
+    """Manages Postfix + SASL email proxy deployment and configuration."""
 
     def __init__(self):
         self._deployed = False
@@ -70,26 +70,6 @@ class EmailProxyManager:
             except Exception as e:
                 raise Exception(f"Package installation failed: {e}")
 
-            # Obtain SSL certificate via certbot
-            # WARNING: DNS must be configured for this hostname before running!
-            logger.warning("=" * 60)
-            logger.warning("IMPORTANT: Ensure DNS A record for %s points to this server!", hostname)
-            logger.warning("SSL certificate generation will fail without proper DNS setup.")
-            logger.warning("=" * 60)
-            try:
-                await self._obtain_ssl_cert()
-            except Exception as e:
-                error_msg = f"SSL certificate generation failed: {e}"
-                logger.error(error_msg)
-                logger.error("=" * 60)
-                logger.error("MANUAL INTERVENTION REQUIRED:")
-                logger.error("1. Ensure DNS A record for %s points to this server's public IP", hostname)
-                logger.error("2. Run: certbot certonly --standalone -d %s", hostname)
-                logger.error("3. Fix permissions: chmod 755 /etc/letsencrypt/live/ /etc/letsencrypt/archive/")
-                logger.error("4. Restart postfix: systemctl restart postfix")
-                logger.error("=" * 60)
-                return False, error_msg
-
             # Configure SASL
             try:
                 await self._configure_sasl()
@@ -109,8 +89,25 @@ class EmailProxyManager:
                 raise Exception(f"Service startup failed: {e}")
 
             self._deployed = True
+
+            # Check if SSL is configured
+            ssl_warning = None
+            cert_path = f"/etc/letsencrypt/live/{hostname}/fullchain.pem"
+            if not os.path.exists(cert_path):
+                ssl_warning = (
+                    f"SSL not configured. For TLS support, run on the agent server:\n"
+                    f"  1. apt install certbot\n"
+                    f"  2. certbot certonly --standalone -d {hostname}\n"
+                    f"  3. chmod 755 /etc/letsencrypt/live/ /etc/letsencrypt/archive/\n"
+                    f"  4. systemctl restart postfix"
+                )
+                logger.warning("=" * 60)
+                logger.warning("SSL NOT CONFIGURED - TLS disabled")
+                logger.warning(ssl_warning)
+                logger.warning("=" * 60)
+
             logger.info("Email proxy deployment complete")
-            return True, None
+            return True, ssl_warning
 
         except Exception as e:
             error_msg = str(e)
@@ -136,12 +133,66 @@ class EmailProxyManager:
         return proc.returncode, stdout.decode(), stderr.decode()
 
     async def _install_packages(self):
-        """Install Postfix, SASL, and certbot packages (no rspamd - mailcow handles filtering)."""
-        logger.info("Installing Postfix, SASL, and certbot packages...")
+        """Install Postfix and SASL packages (no rspamd - mailcow handles filtering)."""
+        logger.info("Installing Postfix and SASL packages...")
 
-        # Set non-interactive frontend for apt
+        # Set up environment for apt - ensure we have a proper environment
+        # when running from systemd service
         env = os.environ.copy()
         env['DEBIAN_FRONTEND'] = 'noninteractive'
+        env['DEBCONF_NONINTERACTIVE_SEEN'] = 'true'
+        env['PATH'] = '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'
+        env['LC_ALL'] = 'C'
+        env['LANG'] = 'C'
+
+        # Clear any stale lock files that might be left from crashed processes
+        logger.info("Clearing any stale lock files...")
+        for lock_file in [
+            "/var/lib/dpkg/lock",
+            "/var/lib/dpkg/lock-frontend",
+            "/var/cache/apt/archives/lock",
+            "/var/lib/apt/lists/lock"
+        ]:
+            if os.path.exists(lock_file):
+                try:
+                    os.remove(lock_file)
+                    logger.info(f"Removed stale lock file: {lock_file}")
+                except Exception as e:
+                    logger.warning(f"Could not remove {lock_file}: {e}")
+
+        # First, attempt to fix any broken dpkg/apt state
+        logger.info("Checking and repairing package manager state...")
+
+        # Configure any partially installed packages
+        proc = await asyncio.create_subprocess_exec(
+            "dpkg", "--configure", "-a", "--force-confdef", "--force-confold",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            env=env
+        )
+        stdout, stderr = await proc.communicate()
+        if proc.returncode != 0:
+            logger.warning(f"dpkg --configure -a returned non-zero: {stderr.decode()}")
+
+        # Clean apt cache to remove any corrupted packages
+        proc = await asyncio.create_subprocess_exec(
+            "apt-get", "clean",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            env=env
+        )
+        await proc.communicate()
+
+        # Fix broken dependencies
+        proc = await asyncio.create_subprocess_exec(
+            "apt-get", "-f", "install", "-y", "--fix-missing",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            env=env
+        )
+        stdout, stderr = await proc.communicate()
+        if proc.returncode != 0:
+            logger.warning(f"apt-get -f install returned non-zero: {stderr.decode()}")
 
         # Pre-configure postfix to avoid interactive prompts
         debconf_settings = [
@@ -159,15 +210,27 @@ class EmailProxyManager:
             await proc.communicate()
 
         # Update package lists
-        await self._run_command("apt-get", "update")
-
-        # Install packages: postfix, SASL, and certbot for SSL certs
-        # No rspamd - mailcow handles filtering
+        logger.info("Updating package lists...")
         proc = await asyncio.create_subprocess_exec(
-            "apt-get", "install", "-y",
+            "apt-get", "update",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            env=env
+        )
+        stdout, stderr = await proc.communicate()
+        if proc.returncode != 0:
+            logger.warning(f"apt-get update returned non-zero: {stderr.decode()}")
+
+        # Install packages: postfix and SASL
+        # No rspamd - mailcow handles filtering
+        # No certbot - SSL setup is manual
+        logger.info("Installing postfix and SASL packages...")
+        proc = await asyncio.create_subprocess_exec(
+            "apt-get", "install", "-y", "--no-install-recommends",
+            "-o", "Dpkg::Options::=--force-confdef",
+            "-o", "Dpkg::Options::=--force-confold",
             "postfix",
             "sasl2-bin", "libsasl2-modules",
-            "certbot",
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             env=env
@@ -175,7 +238,10 @@ class EmailProxyManager:
         stdout, stderr = await proc.communicate()
 
         if proc.returncode != 0:
-            raise Exception(f"Failed to install packages: {stderr.decode()}")
+            error_output = stderr.decode()
+            logger.error(f"Package installation failed. stdout: {stdout.decode()}")
+            logger.error(f"Package installation failed. stderr: {error_output}")
+            raise Exception(f"Failed to install packages: {error_output}")
 
         logger.info("Packages installed successfully")
 
@@ -269,12 +335,13 @@ sasldb_path: /etc/sasldb2
         logger.info("SASL configured with auxprop/sasldb")
 
     async def _configure_postfix(self):
-        """Configure Postfix as mail relay with SASL auth, Let's Encrypt TLS, and proper routing.
+        """Configure Postfix as mail relay with SASL auth and proper routing.
 
         Key design:
         - Outbound: Delivers directly to destination MX (no relayhost)
         - Inbound: Routes mail for relay_domains to Mailcow via transport_maps
         - No milters: Mailcow handles all filtering
+        - TLS: Configured for Let's Encrypt certs (user installs certbot manually)
         """
         if not self._postfix_config:
             raise Exception("PostfixConfig not set")
@@ -284,7 +351,8 @@ sasldb_path: /etc/sasldb2
         config = self._postfix_config
         hostname = config.hostname
 
-        # Main configuration matching proven working setup
+        # Main configuration - TLS paths are set for Let's Encrypt
+        # User needs to install certbot and obtain certs manually after deployment
         main_cf = f"""# NekoProxy Email Relay Configuration
 # Automatically managed - do not edit manually
 
@@ -295,6 +363,11 @@ append_dot_mydomain = no
 compatibility_level = 2
 
 # TLS parameters - Let's Encrypt certificates
+# NOTE: You must install certbot and obtain certificates for TLS to work:
+#   1. apt install certbot
+#   2. certbot certonly --standalone -d {hostname}
+#   3. chmod 755 /etc/letsencrypt/live/ /etc/letsencrypt/archive/
+#   4. systemctl restart postfix
 smtpd_tls_cert_file = /etc/letsencrypt/live/{hostname}/fullchain.pem
 smtpd_tls_key_file = /etc/letsencrypt/live/{hostname}/privkey.pem
 smtpd_tls_security_level = may

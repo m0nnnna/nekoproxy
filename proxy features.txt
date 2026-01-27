@@ -1,0 +1,21 @@
+1:
+add email page to proxy 
+button that will deploy postfix and the saslauth system
+or postfix and rspamd to take mail and filter it to the mailcow system
+the automated system will ask the user for mailcow ip and port 
+once it connects to mailcow however is best it will ensure the following 
+all outgoing email is stamped with the proxies IP address not the homeserver 
+add a system where only users only named in a postfix file can send email from mailcow through the proxy using an address map 
+this map will be editable in the webui via a "new user" and "remove user" button this will create a new mailbox in mailcow and add it to the proxies system 
+also being able to add a blocklist for email only can be an address, an entire domain, or an ip/range
+forwarding of normal ports can be done already in the proxy for login reasons 
+deploying of the email proxy will have the same push to agents and allow the users to select what agent to deploy to
+
+2:
+geoip block system for both the normal ip blocklist and email blocklist 
+
+3:
+log search page allowing users to search through all the logs that are recorded logs are not wiped untill a user hits the button in the gui to wipe them out
+
+4:
+update version number to 2.0.0

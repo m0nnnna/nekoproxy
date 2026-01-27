@@ -81,12 +81,22 @@ class EmailManager:
             logger.info(f"  Mailcow IP: {deploy_config['mailcow_ip']}:{deploy_config['mailcow_port']}")
             logger.info(f"  Proxy IP: {deploy_config['proxy_ip']}")
 
-            async with httpx.AsyncClient(timeout=600.0) as client:  # 10 min timeout for SSL cert generation
+            async with httpx.AsyncClient(timeout=120.0) as client:  # 2 min timeout (no SSL cert generation)
                 response = await client.post(url, json=deploy_config)
                 response.raise_for_status()
 
             self.config_repo.update_deployment_status(config.id, EmailDeploymentStatus.DEPLOYED)
             logger.info(f"Email proxy deployed to agent {agent.hostname}")
+
+            # Check for SSL warning in response
+            try:
+                result = response.json()
+                if result.get("warning"):
+                    logger.warning(f"Deployment warning for {agent.hostname}: {result['warning']}")
+                    return True, f"Deployed to {agent.hostname}. Warning: SSL not configured - run certbot manually for TLS"
+            except Exception:
+                pass
+
             return True, f"Deployed to {agent.hostname}"
 
         except httpx.TimeoutException:

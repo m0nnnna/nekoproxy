@@ -24,7 +24,7 @@
     <div class="flex">
         <div class="ml-3">
             <p class="text-sm text-blue-700">
-                <strong>Email Proxy</strong> relays email through Postfix + rspamd + SASL to your Mailcow server.
+                <strong>Email Proxy</strong> relays email through Postfix + SASL to your Mailcow server.
                 Only SASL-authenticated users can send email. Outgoing emails are stamped with the proxy's IP address.
             </p>
         </div>
@@ -97,7 +97,7 @@
 <div class="bg-white shadow rounded-lg p-6 mb-6">
     <h2 class="text-lg font-semibold text-gray-900 mb-4">Deploy Email Proxy</h2>
     <p class="text-sm text-gray-500 mb-4">
-        Deploy Postfix + rspamd + SASL to selected agents. This will install and configure the email relay service.
+        Deploy Postfix + SASL to selected agents. This will install and configure the email relay service.
     </p>
     <form hx-post="/email/deploy" hx-target="#deploy-status" hx-swap="innerHTML">
         <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
@@ -233,10 +233,9 @@
 
 <!-- Authorized Senders Section -->
 <div class="bg-white shadow rounded-lg p-6 mb-6">
-    <h2 class="text-lg font-semibold text-gray-900 mb-4">Authorized Senders (Legacy)</h2>
+    <h2 class="text-lg font-semibold text-gray-900 mb-4">Authorized Senders</h2>
     <p class="text-sm text-gray-500 mb-4">
-        Legacy sender whitelist. With SASL enabled, use SASL users above instead.
-        These addresses are allowed even without SASL authentication.
+        Email addresses authorized to send through the proxy without SASL authentication.
     </p>
     <form hx-post="/email/users" hx-target="#users-table" hx-swap="innerHTML" class="space-y-4 mb-4">
         <div class="grid grid-cols-1 md:grid-cols-5 gap-4">

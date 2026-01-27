@@ -17,6 +17,7 @@ from agent.core.stats_reporter import StatsReporter
 from agent.core.firewall import FirewallManager
 from agent.core.control_api import ControlAPI
 from agent.core.email_proxy import EmailProxyManager
+from agent.core.email_stats import EmailStatsCollector
 from shared.models import AgentConfig, AgentRegistration
 
 # Configure logging
@@ -46,6 +47,9 @@ class NekoProxyAgent:
 
         # Email proxy manager
         self._email_manager = EmailProxyManager()
+
+        # Email stats collector (started after email proxy deployment)
+        self._email_stats: Optional[EmailStatsCollector] = None
 
         # Controller communication
         self._heartbeat: Optional[HeartbeatSender] = None
@@ -114,7 +118,15 @@ class NekoProxyAgent:
         Returns:
             Tuple of (success: bool, error_message: str or None)
         """
-        return await self._email_manager.deploy(hostname, mailcow_ip, mailcow_port, proxy_ip)
+        result = await self._email_manager.deploy(hostname, mailcow_ip, mailcow_port, proxy_ip)
+        success, message = result
+
+        # Start email stats collector if deployment succeeded
+        if success and self.agent_id and not self._email_stats:
+            self._email_stats = EmailStatsCollector(self.agent_id)
+            await self._email_stats.start()
+
+        return result
 
     async def _trigger_email_sync(self):
         """Trigger email configuration sync from controller.
@@ -128,6 +140,26 @@ class NekoProxyAgent:
         # Force a full config sync which will include email config
         if self._config_sync:
             await self._config_sync.force_sync()
+
+    async def _check_email_proxy_deployed(self) -> bool:
+        """Check if email proxy (Postfix) was previously deployed and is running."""
+        try:
+            # Check if Postfix is running
+            proc = await asyncio.create_subprocess_exec(
+                "systemctl", "is-active", "postfix",
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+            stdout, _ = await proc.communicate()
+
+            if proc.returncode == 0 and stdout.decode().strip() == "active":
+                # Mark email manager as deployed so config sync works
+                self._email_manager._deployed = True
+                return True
+        except Exception as e:
+            logger.debug(f"Could not check Postfix status: {e}")
+
+        return False
 
     async def register(self) -> bool:
         """Register with the controller."""
@@ -203,6 +235,13 @@ class NekoProxyAgent:
         )
         await self._control_api.start()
 
+        # Check if email proxy was previously deployed (Postfix running)
+        # and start email stats collector if so
+        if await self._check_email_proxy_deployed():
+            self._email_stats = EmailStatsCollector(self.agent_id)
+            await self._email_stats.start()
+            logger.info("Email stats collector started (Postfix already deployed)")
+
         logger.info("=" * 70)
         logger.info("NekoProxy Agent running. Press Ctrl+C to stop.")
         logger.info("=" * 70)
@@ -234,6 +273,10 @@ class NekoProxyAgent:
 
         # Stop email proxy if deployed
         await self._email_manager.shutdown()
+
+        # Stop email stats collector if running
+        if self._email_stats:
+            await self._email_stats.stop()
 
         if self._stats_reporter:
             await self._stats_reporter.stop()
