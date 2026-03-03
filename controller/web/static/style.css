@@ -1,7 +1,475 @@
-/* Additional custom styles for NekoProxy controller */
-/* Most styling is handled by TailwindCSS CDN */
+/* =^.^= NekoProxy Kawaii Stylesheet =^.^= */
 
-/* Loading indicator */
+/* ===== Navigation ===== */
+.neko-nav {
+    background: linear-gradient(135deg, #ec4899, #a855f7, #8b5cf6);
+    position: relative;
+    overflow: hidden;
+}
+
+.neko-nav::before {
+    content: '';
+    position: absolute;
+    top: -50%;
+    left: -50%;
+    width: 200%;
+    height: 200%;
+    background: radial-gradient(circle, rgba(255,255,255,0.05) 1px, transparent 1px);
+    background-size: 20px 20px;
+    animation: sparkle-drift 20s linear infinite;
+    pointer-events: none;
+}
+
+.neko-nav-link {
+    position: relative;
+    z-index: 1;
+}
+
+/* ===== Footer ===== */
+.neko-footer {
+    background: linear-gradient(135deg, #9d174d, #7e22ce);
+    position: relative;
+}
+
+/* ===== Neko Bounce Animation ===== */
+@keyframes neko-bounce {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-3px); }
+}
+
+.neko-bounce {
+    animation: neko-bounce 2s ease-in-out infinite;
+}
+
+/* ===== Sparkle Drift ===== */
+@keyframes sparkle-drift {
+    0% { transform: translate(0, 0); }
+    100% { transform: translate(50px, 50px); }
+}
+
+/* ===== Cards ===== */
+.neko-card {
+    background: white;
+    border-radius: 1rem;
+    box-shadow: 0 4px 15px rgba(236, 72, 153, 0.08), 0 1px 3px rgba(0,0,0,0.05);
+    border: 1px solid rgba(236, 72, 153, 0.1);
+    position: relative;
+    overflow: hidden;
+    transition: all 0.3s ease;
+}
+
+.neko-card:hover {
+    box-shadow: 0 8px 25px rgba(236, 72, 153, 0.15), 0 2px 6px rgba(0,0,0,0.05);
+    transform: translateY(-1px);
+}
+
+/* Cat ear decoration on cards */
+.neko-card-ears::before,
+.neko-card-ears::after {
+    content: '';
+    position: absolute;
+    top: -8px;
+    width: 16px;
+    height: 16px;
+    background: linear-gradient(135deg, #f9a8d4, #f472b6);
+    border-radius: 2px;
+    transform: rotate(45deg);
+    z-index: 1;
+}
+
+.neko-card-ears::before { left: 12px; }
+.neko-card-ears::after { right: 12px; }
+
+/* ===== Tables ===== */
+.neko-table-container {
+    background: white;
+    border-radius: 1rem;
+    box-shadow: 0 4px 15px rgba(236, 72, 153, 0.08);
+    border: 1px solid rgba(236, 72, 153, 0.1);
+    overflow: hidden;
+}
+
+.neko-table thead {
+    background: linear-gradient(135deg, #fdf2f8, #faf5ff);
+}
+
+.neko-table thead th {
+    color: #9d174d;
+    font-weight: 700;
+    text-transform: uppercase;
+    font-size: 0.7rem;
+    letter-spacing: 0.05em;
+    padding: 0.75rem 1rem;
+    border-bottom: 2px solid #fbcfe8;
+}
+
+.neko-table tbody tr {
+    transition: all 0.2s ease;
+    border-bottom: 1px solid #fce7f3;
+}
+
+.neko-table tbody tr:hover {
+    background-color: #fdf2f8;
+}
+
+.neko-table tbody td {
+    padding: 0.75rem 1rem;
+    font-size: 0.875rem;
+}
+
+/* ===== Scrollable Log Container ===== */
+.neko-scroll {
+    max-height: 480px;
+    overflow-y: auto;
+    overflow-x: auto;
+}
+
+.neko-scroll::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+.neko-scroll::-webkit-scrollbar-track {
+    background: #fdf2f8;
+    border-radius: 10px;
+}
+
+.neko-scroll::-webkit-scrollbar-thumb {
+    background: linear-gradient(180deg, #f9a8d4, #f472b6);
+    border-radius: 10px;
+    border: 2px solid #fdf2f8;
+}
+
+.neko-scroll::-webkit-scrollbar-thumb:hover {
+    background: linear-gradient(180deg, #f472b6, #ec4899);
+}
+
+/* Firefox scrollbar */
+.neko-scroll {
+    scrollbar-width: thin;
+    scrollbar-color: #f472b6 #fdf2f8;
+}
+
+/* ===== Buttons ===== */
+.neko-btn-primary {
+    background: linear-gradient(135deg, #ec4899, #a855f7);
+    color: white;
+    border: none;
+    border-radius: 0.75rem;
+    font-weight: 600;
+    transition: all 0.2s ease;
+    box-shadow: 0 2px 8px rgba(236, 72, 153, 0.3);
+}
+
+.neko-btn-primary:hover {
+    background: linear-gradient(135deg, #db2777, #9333ea);
+    box-shadow: 0 4px 15px rgba(236, 72, 153, 0.4);
+    transform: translateY(-1px);
+}
+
+.neko-btn-danger {
+    background: linear-gradient(135deg, #f43f5e, #e11d48);
+    color: white;
+    border: none;
+    border-radius: 0.75rem;
+    font-weight: 600;
+    transition: all 0.2s ease;
+    box-shadow: 0 2px 8px rgba(244, 63, 94, 0.3);
+}
+
+.neko-btn-danger:hover {
+    background: linear-gradient(135deg, #e11d48, #be123c);
+    box-shadow: 0 4px 15px rgba(244, 63, 94, 0.4);
+    transform: translateY(-1px);
+}
+
+.neko-btn-success {
+    background: linear-gradient(135deg, #34d399, #10b981);
+    color: white;
+    border: none;
+    border-radius: 0.75rem;
+    font-weight: 600;
+    transition: all 0.2s ease;
+    box-shadow: 0 2px 8px rgba(52, 211, 153, 0.3);
+}
+
+.neko-btn-success:hover {
+    background: linear-gradient(135deg, #10b981, #059669);
+    box-shadow: 0 4px 15px rgba(52, 211, 153, 0.4);
+    transform: translateY(-1px);
+}
+
+/* ===== Form Inputs ===== */
+.neko-input {
+    border: 2px solid #fbcfe8;
+    border-radius: 0.75rem;
+    padding: 0.5rem 0.75rem;
+    font-size: 0.875rem;
+    transition: all 0.2s ease;
+    background: white;
+}
+
+.neko-input:focus {
+    outline: none;
+    border-color: #f472b6;
+    box-shadow: 0 0 0 3px rgba(244, 114, 182, 0.2);
+}
+
+.neko-input::placeholder {
+    color: #d8b4fe;
+}
+
+/* ===== Badges ===== */
+.neko-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.2rem 0.6rem;
+    border-radius: 9999px;
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+}
+
+.neko-badge-critical {
+    background: linear-gradient(135deg, #fee2e2, #fecaca);
+    color: #991b1b;
+    border: 1px solid #fca5a5;
+}
+
+.neko-badge-high {
+    background: linear-gradient(135deg, #ffedd5, #fed7aa);
+    color: #9a3412;
+    border: 1px solid #fdba74;
+}
+
+.neko-badge-medium {
+    background: linear-gradient(135deg, #fef9c3, #fef08a);
+    color: #854d0e;
+    border: 1px solid #fde047;
+}
+
+.neko-badge-low {
+    background: linear-gradient(135deg, #e0e7ff, #c7d2fe);
+    color: #3730a3;
+    border: 1px solid #a5b4fc;
+}
+
+.neko-badge-healthy {
+    background: linear-gradient(135deg, #d1fae5, #a7f3d0);
+    color: #065f46;
+    border: 1px solid #6ee7b7;
+}
+
+.neko-badge-unhealthy {
+    background: linear-gradient(135deg, #fee2e2, #fecaca);
+    color: #991b1b;
+    border: 1px solid #fca5a5;
+}
+
+.neko-badge-blocked {
+    background: linear-gradient(135deg, #fee2e2, #fecaca);
+    color: #991b1b;
+    border: 1px solid #fca5a5;
+}
+
+.neko-badge-allow {
+    background: linear-gradient(135deg, #d1fae5, #a7f3d0);
+    color: #065f46;
+    border: 1px solid #6ee7b7;
+}
+
+.neko-badge-block {
+    background: linear-gradient(135deg, #fee2e2, #fecaca);
+    color: #991b1b;
+    border: 1px solid #fca5a5;
+}
+
+.neko-badge-purple {
+    background: linear-gradient(135deg, #f3e8ff, #e9d5ff);
+    color: #6b21a8;
+    border: 1px solid #d8b4fe;
+}
+
+/* ===== Info Banners ===== */
+.neko-info {
+    background: linear-gradient(135deg, #fdf2f8, #faf5ff);
+    border-left: 4px solid #f472b6;
+    border-radius: 0 0.75rem 0.75rem 0;
+    padding: 1rem 1.25rem;
+    color: #9d174d;
+}
+
+.neko-info strong {
+    color: #831843;
+}
+
+.neko-warning {
+    background: linear-gradient(135deg, #fffbeb, #fef3c7);
+    border-left: 4px solid #f59e0b;
+    border-radius: 0 0.75rem 0.75rem 0;
+    padding: 1rem 1.25rem;
+    color: #92400e;
+}
+
+.neko-success {
+    background: linear-gradient(135deg, #ecfdf5, #d1fae5);
+    border-left: 4px solid #34d399;
+    border-radius: 0 0.75rem 0.75rem 0;
+    padding: 1rem 1.25rem;
+    color: #065f46;
+}
+
+/* ===== Alert Summary Cards ===== */
+.neko-stat-card {
+    border-radius: 1rem;
+    padding: 1.25rem;
+    position: relative;
+    overflow: hidden;
+    transition: all 0.3s ease;
+}
+
+.neko-stat-card:hover {
+    transform: translateY(-2px);
+}
+
+.neko-stat-card::after {
+    content: '';
+    position: absolute;
+    bottom: -10px;
+    right: -10px;
+    width: 60px;
+    height: 60px;
+    background: rgba(255,255,255,0.15);
+    border-radius: 50%;
+}
+
+/* ===== Section Headers ===== */
+.neko-header {
+    color: #831843;
+    font-weight: 800;
+    position: relative;
+    display: inline-block;
+}
+
+.neko-header::after {
+    content: ' ~nya';
+    font-size: 0.6em;
+    opacity: 0.5;
+    font-weight: 400;
+}
+
+.neko-subheader {
+    color: #9d174d;
+    font-weight: 700;
+}
+
+/* ===== Tab Styles ===== */
+.neko-tab {
+    border-bottom: 3px solid transparent;
+    color: #d8b4fe;
+    font-weight: 600;
+    transition: all 0.2s ease;
+    padding: 0.75rem 1rem;
+}
+
+.neko-tab:hover {
+    color: #a855f7;
+    border-bottom-color: #e9d5ff;
+}
+
+.neko-tab-active {
+    color: #ec4899;
+    border-bottom-color: #ec4899;
+}
+
+/* ===== Preset Buttons ===== */
+.neko-preset-danger {
+    background: linear-gradient(135deg, #fee2e2, #fecaca);
+    color: #991b1b;
+    border: 1px solid #fca5a5;
+    border-radius: 0.75rem;
+    padding: 0.375rem 0.75rem;
+    font-size: 0.875rem;
+    font-weight: 600;
+    transition: all 0.2s ease;
+}
+
+.neko-preset-danger:hover {
+    background: linear-gradient(135deg, #fecaca, #fca5a5);
+    transform: translateY(-1px);
+}
+
+.neko-preset-success {
+    background: linear-gradient(135deg, #d1fae5, #a7f3d0);
+    color: #065f46;
+    border: 1px solid #6ee7b7;
+    border-radius: 0.75rem;
+    padding: 0.375rem 0.75rem;
+    font-size: 0.875rem;
+    font-weight: 600;
+    transition: all 0.2s ease;
+}
+
+.neko-preset-success:hover {
+    background: linear-gradient(135deg, #a7f3d0, #6ee7b7);
+    transform: translateY(-1px);
+}
+
+/* ===== Action Links ===== */
+.neko-action-green {
+    color: #10b981;
+    transition: all 0.2s ease;
+}
+
+.neko-action-green:hover {
+    color: #059669;
+    transform: scale(1.1);
+}
+
+.neko-action-orange {
+    color: #f59e0b;
+    transition: all 0.2s ease;
+}
+
+.neko-action-orange:hover {
+    color: #d97706;
+    transform: scale(1.1);
+}
+
+.neko-action-red {
+    color: #f43f5e;
+    transition: all 0.2s ease;
+}
+
+.neko-action-red:hover {
+    color: #e11d48;
+    transform: scale(1.1);
+}
+
+/* ===== Paw Trail Decoration ===== */
+.paw-trail {
+    height: 4px;
+    background: linear-gradient(90deg, #ec4899, #a855f7, #ec4899, #a855f7);
+    background-size: 200% 100%;
+    animation: paw-walk 3s linear infinite;
+}
+
+@keyframes paw-walk {
+    0% { background-position: 0% 0%; }
+    100% { background-position: 200% 0%; }
+}
+
+/* ===== HTMX Transitions ===== */
+.htmx-settling {
+    opacity: 0.8;
+}
+
+.htmx-swapping {
+    opacity: 0.5;
+    transition: opacity 100ms ease-out;
+}
+
+/* ===== Loading indicator ===== */
 .htmx-indicator {
     opacity: 0;
     transition: opacity 200ms ease-in;
@@ -15,38 +483,67 @@
     opacity: 1;
 }
 
-/* Smooth transitions for htmx updates */
-.htmx-settling {
-    opacity: 0.8;
-}
-
-.htmx-swapping {
-    opacity: 0.5;
-    transition: opacity 100ms ease-out;
-}
-
-/* Status indicator pulse animation */
+/* ===== Status indicator pulse ===== */
 @keyframes pulse {
-    0%, 100% {
-        opacity: 1;
-    }
-    50% {
-        opacity: 0.5;
-    }
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
 }
 
 .status-pulse {
     animation: pulse 2s ease-in-out infinite;
 }
 
-/* Table hover effects */
-tbody tr:hover {
-    background-color: #f9fafb;
+/* ===== Time Range Selector ===== */
+.neko-time-btn {
+    padding: 0.25rem 0.75rem;
+    font-size: 0.875rem;
+    font-weight: 600;
+    border-radius: 9999px;
+    transition: all 0.2s ease;
 }
 
-/* Form focus styles */
-input:focus, select:focus, textarea:focus {
-    outline: none;
-    ring: 2px;
-    ring-color: #3b82f6;
+.neko-time-active {
+    background: linear-gradient(135deg, #ec4899, #a855f7);
+    color: white;
+    box-shadow: 0 2px 8px rgba(236, 72, 153, 0.3);
+}
+
+.neko-time-inactive {
+    background: #fce7f3;
+    color: #9d174d;
+}
+
+.neko-time-inactive:hover {
+    background: #fbcfe8;
+}
+
+/* ===== Unacknowledged Alert Row ===== */
+.neko-unacked {
+    background-color: #fff1f2;
+}
+
+.neko-unacked:hover {
+    background-color: #ffe4e6;
+}
+
+/* ===== Cat Face Empty State ===== */
+.neko-empty {
+    color: #d8b4fe;
+    font-style: italic;
+}
+
+/* ===== Label styling ===== */
+.neko-label {
+    display: block;
+    font-size: 0.8rem;
+    font-weight: 700;
+    color: #9d174d;
+    margin-bottom: 0.25rem;
+}
+
+/* ===== Password display ===== */
+.neko-password-display {
+    background: linear-gradient(135deg, #fffbeb, #fef3c7);
+    border-left: 4px solid #f59e0b;
+    border-radius: 0 0.75rem 0.75rem 0;
 }

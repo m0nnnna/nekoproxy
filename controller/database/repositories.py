@@ -1,9 +1,9 @@
 from datetime import datetime, timedelta
 from typing import Optional, List
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import and_, or_
 
-from .models import Agent, Service, ServiceAssignment, BlocklistEntry, ConnectionStat, FirewallRule, Alert, EmailConfig, EmailUser, EmailBlocklistEntry, EmailStat
+from .models import Agent, Service, ServiceAssignment, BlocklistEntry, ConnectionStat, FirewallRule, Alert, EmailConfig, EmailUser, EmailBlocklistEntry, EmailStat, FirewallStat, GlobalSettings
 from shared.models.common import HealthStatus, Protocol, FirewallAction, AlertSeverity, AlertType, EmailBlocklistType, EmailDeploymentStatus
 
 
@@ -217,6 +217,51 @@ class BlocklistRepository:
         return [e.ip for e in entries]
 
 
+class GlobalSettingsRepository:
+    """Single-row global settings (GUI)."""
+
+    def __init__(self, db: Session):
+        self.db = db
+
+    def get(self) -> Optional[GlobalSettings]:
+        return self.db.query(GlobalSettings).first()
+
+    def get_or_create(self) -> GlobalSettings:
+        row = self.get()
+        if row is None:
+            row = GlobalSettings()
+            self.db.add(row)
+            self.db.commit()
+            self.db.refresh(row)
+        return row
+
+    def update(
+        self,
+        controller_url: Optional[str] = None,
+        geo_mode: Optional[str] = None,
+        geo_countries: Optional[str] = None,
+        idle_connection_timeout_seconds: Optional[int] = None,
+        paranoid: Optional[bool] = None,
+        agent_secret: Optional[str] = None,
+    ) -> GlobalSettings:
+        row = self.get_or_create()
+        if controller_url is not None:
+            row.controller_url = controller_url or None
+        if geo_mode is not None:
+            row.geo_mode = geo_mode or None
+        if geo_countries is not None:
+            row.geo_countries = geo_countries or None
+        if idle_connection_timeout_seconds is not None:
+            row.idle_connection_timeout_seconds = idle_connection_timeout_seconds
+        if paranoid is not None:
+            row.paranoid = paranoid
+        if agent_secret is not None:
+            row.agent_secret = agent_secret if agent_secret else None
+        self.db.commit()
+        self.db.refresh(row)
+        return row
+
+
 class ConnectionStatRepository:
     def __init__(self, db: Session):
         self.db = db
@@ -249,7 +294,10 @@ class ConnectionStatRepository:
 
     def get_recent(self, hours: int = 24, limit: int = 100) -> List[ConnectionStat]:
         cutoff = datetime.utcnow() - timedelta(hours=hours)
-        return self.db.query(ConnectionStat).filter(
+        return self.db.query(ConnectionStat).options(
+            joinedload(ConnectionStat.service),
+            joinedload(ConnectionStat.agent),
+        ).filter(
             ConnectionStat.timestamp >= cutoff
         ).order_by(ConnectionStat.timestamp.desc()).limit(limit).all()
 
@@ -961,7 +1009,9 @@ class EmailStatRepository:
 
     def get_recent(self, hours: int = 24, limit: int = 100) -> List[EmailStat]:
         cutoff = datetime.utcnow() - timedelta(hours=hours)
-        return self.db.query(EmailStat).filter(
+        return self.db.query(EmailStat).options(
+            joinedload(EmailStat.agent),
+        ).filter(
             EmailStat.timestamp >= cutoff
         ).order_by(EmailStat.timestamp.desc()).limit(limit).all()
 
@@ -1005,5 +1055,71 @@ class EmailStatRepository:
             "bounced_emails": bounced_count,
             "email_bytes_sent": total_bytes_sent,
             "email_bytes_received": total_bytes_received,
+            "period_hours": hours
+        }
+
+
+class FirewallStatRepository:
+    """Repository for firewall (iptables) traffic statistics."""
+
+    def __init__(self, db: Session):
+        self.db = db
+
+    def add_batch(self, stats: List[dict]) -> int:
+        """Add multiple firewall stats at once."""
+        count = 0
+        for stat_data in stats:
+            stat = FirewallStat(**stat_data)
+            self.db.add(stat)
+            count += 1
+        self.db.commit()
+        return count
+
+    def get_recent(self, hours: int = 24, limit: int = 100) -> List[FirewallStat]:
+        cutoff = datetime.utcnow() - timedelta(hours=hours)
+        return self.db.query(FirewallStat).options(
+            joinedload(FirewallStat.agent),
+        ).filter(
+            FirewallStat.timestamp >= cutoff
+        ).order_by(FirewallStat.timestamp.desc()).limit(limit).all()
+
+    def get_by_agent(self, agent_id: int, limit: int = 100) -> List[FirewallStat]:
+        return self.db.query(FirewallStat).filter(
+            FirewallStat.agent_id == agent_id
+        ).order_by(FirewallStat.timestamp.desc()).limit(limit).all()
+
+    def cleanup_old(self, days: int = 30) -> int:
+        """Delete stats older than specified days."""
+        cutoff = datetime.utcnow() - timedelta(days=days)
+        deleted = self.db.query(FirewallStat).filter(
+            FirewallStat.timestamp < cutoff
+        ).delete()
+        self.db.commit()
+        return deleted
+
+    def get_stats_summary(self, hours: Optional[int] = 24) -> dict:
+        """Get aggregated firewall statistics. If hours is None, returns lifetime stats."""
+        if hours is not None:
+            cutoff = datetime.utcnow() - timedelta(hours=hours)
+            stats = self.db.query(FirewallStat).filter(
+                FirewallStat.timestamp >= cutoff
+            ).all()
+        else:
+            stats = self.db.query(FirewallStat).all()
+
+        total_packets = sum(s.packets for s in stats)
+        total_bytes = sum(s.bytes_count for s in stats)
+        blocked_packets = sum(s.packets for s in stats if s.action == "block")
+        blocked_bytes = sum(s.bytes_count for s in stats if s.action == "block")
+        allowed_packets = sum(s.packets for s in stats if s.action == "allow")
+        allowed_bytes = sum(s.bytes_count for s in stats if s.action == "allow")
+
+        return {
+            "total_firewall_packets": total_packets,
+            "total_firewall_bytes": total_bytes,
+            "blocked_packets": blocked_packets,
+            "blocked_bytes": blocked_bytes,
+            "allowed_packets": allowed_packets,
+            "allowed_bytes": allowed_bytes,
             "period_hours": hours
         }

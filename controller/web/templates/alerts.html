@@ -4,10 +4,10 @@
 
 {% block content %}
 <div class="flex justify-between items-center mb-6">
-    <h1 class="text-2xl font-bold text-gray-900">Security Alerts</h1>
+    <h1 class="text-2xl neko-header">Security Alerts</h1>
     {% if total_unacked > 0 %}
     <button hx-post="/alerts/acknowledge-all" hx-target="#alerts-table" hx-swap="innerHTML"
-            class="bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700 text-sm">
+            class="neko-btn-success px-4 py-2 text-sm">
         Acknowledge All ({{ total_unacked }})
     </button>
     {% endif %}
@@ -15,70 +15,64 @@
 
 <!-- Alert Counts Summary -->
 <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-    <div class="bg-red-50 border-l-4 border-red-500 p-4 rounded-r-lg">
-        <div class="text-2xl font-bold text-red-700">{{ counts.get('critical', 0) }}</div>
-        <div class="text-sm text-red-600">Critical</div>
+    <div class="neko-stat-card bg-gradient-to-br from-red-50 to-red-100 border border-red-200">
+        <div class="text-2xl font-extrabold text-red-600">{{ counts.get('critical', 0) }}</div>
+        <div class="text-sm font-semibold text-red-500">Critical</div>
     </div>
-    <div class="bg-orange-50 border-l-4 border-orange-500 p-4 rounded-r-lg">
-        <div class="text-2xl font-bold text-orange-700">{{ counts.get('high', 0) }}</div>
-        <div class="text-sm text-orange-600">High</div>
+    <div class="neko-stat-card bg-gradient-to-br from-orange-50 to-orange-100 border border-orange-200">
+        <div class="text-2xl font-extrabold text-orange-600">{{ counts.get('high', 0) }}</div>
+        <div class="text-sm font-semibold text-orange-500">High</div>
     </div>
-    <div class="bg-yellow-50 border-l-4 border-yellow-500 p-4 rounded-r-lg">
-        <div class="text-2xl font-bold text-yellow-700">{{ counts.get('medium', 0) }}</div>
-        <div class="text-sm text-yellow-600">Medium</div>
+    <div class="neko-stat-card bg-gradient-to-br from-yellow-50 to-yellow-100 border border-yellow-200">
+        <div class="text-2xl font-extrabold text-yellow-600">{{ counts.get('medium', 0) }}</div>
+        <div class="text-sm font-semibold text-yellow-500">Medium</div>
     </div>
-    <div class="bg-blue-50 border-l-4 border-blue-500 p-4 rounded-r-lg">
-        <div class="text-2xl font-bold text-blue-700">{{ counts.get('low', 0) }}</div>
-        <div class="text-sm text-blue-600">Low</div>
+    <div class="neko-stat-card bg-gradient-to-br from-paw-50 to-paw-100 border border-paw-200">
+        <div class="text-2xl font-extrabold text-paw-600">{{ counts.get('low', 0) }}</div>
+        <div class="text-sm font-semibold text-paw-500">Low</div>
     </div>
 </div>
 
 <!-- Info Banner -->
-<div class="bg-blue-50 border-l-4 border-blue-400 p-4 mb-6">
-    <div class="flex">
-        <div class="ml-3">
-            <p class="text-sm text-blue-700">
-                <strong>Security Alerts</strong> are generated when suspicious activity is detected, such as:
-                SSH brute force attempts, mail authentication failures, unauthorized mail relay attempts,
-                spam/abuse attempts, access attempts on blocked ports, port scanning activity, and invalid user login attempts.
-                Use the <span class="font-mono bg-blue-100 px-1 rounded">Block IP</span> button to quickly block offending IPs.
-            </p>
-        </div>
-    </div>
+<div class="neko-info mb-6">
+    <p class="text-sm">
+        <strong>Security Alerts</strong> are generated when suspicious activity is detected, such as:
+        SSH brute force attempts, mail authentication failures, unauthorized mail relay attempts,
+        spam/abuse attempts, access attempts on blocked ports, port scanning activity, and invalid user login attempts.
+        Use the <span class="font-mono bg-neko-100 px-1 rounded">Block IP</span> button to quickly block offending IPs ~nya
+    </p>
 </div>
 
 {% if not alerts %}
 <!-- No Alerts -->
-<div class="bg-green-50 border-l-4 border-green-400 p-4 mb-6">
-    <div class="flex">
-        <div class="ml-3">
-            <p class="text-sm text-green-700">
-                No security alerts at this time. The system will log alerts when suspicious activity is detected.
-            </p>
-        </div>
-    </div>
+<div class="neko-success mb-6">
+    <p class="text-sm">
+        No security alerts at this time! The system will log alerts when suspicious activity is detected (=^.^=)
+    </p>
 </div>
 {% endif %}
 
-<!-- Alerts Table -->
-<div class="bg-white shadow rounded-lg overflow-x-auto">
-    <table class="min-w-full divide-y divide-gray-200" style="min-width: 1100px;">
-        <thead class="bg-gray-50">
-            <tr>
-                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Severity</th>
-                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Type</th>
-                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Source IP</th>
-                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Port</th>
-                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Interface</th>
-                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Description</th>
-                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Agent</th>
-                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Time</th>
-                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
-            </tr>
-        </thead>
-        <tbody class="bg-white divide-y divide-gray-200" id="alerts-table">
-            {% include "partials/alerts_table.html" %}
-        </tbody>
-    </table>
+<!-- Alerts Table with Scrollbar -->
+<div class="neko-table-container">
+    <div class="neko-scroll">
+        <table class="min-w-full neko-table" style="min-width: 1100px;">
+            <thead class="sticky top-0 z-10">
+                <tr>
+                    <th class="text-left">Severity</th>
+                    <th class="text-left">Type</th>
+                    <th class="text-left">Source IP</th>
+                    <th class="text-left">Port</th>
+                    <th class="text-left">Interface</th>
+                    <th class="text-left">Description</th>
+                    <th class="text-left">Agent</th>
+                    <th class="text-left">Time</th>
+                    <th class="text-left">Actions</th>
+                </tr>
+            </thead>
+            <tbody id="alerts-table">
+                {% include "partials/alerts_table.html" %}
+            </tbody>
+        </table>
+    </div>
 </div>
 {% endblock %}

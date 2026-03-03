@@ -15,5 +15,11 @@ aiohttp>=3.9.0
 # Shared
 aiofiles>=23.0.0
 
+# Optional: Geo filtering on agent (allow/block by country); requires GeoLite2-Country.mmdb
+geoip2>=4.0.0
+
+# Windows service (optional - only for Windows build; enables install/start/stop/remove)
+# pywin32>=306
+
 # Build (optional - only needed for creating executables)
 # pyinstaller>=6.0.0

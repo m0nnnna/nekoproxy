@@ -22,12 +22,14 @@ build_agent() {
 
     chmod +x /output/nekoproxy-agent
 
-    # Copy install script
+    # Copy install and update scripts
     cp /build/install-agent.sh /output/install-agent.sh
-    chmod +x /output/install-agent.sh
+    cp /build/update-agent.sh /output/update-agent.sh
+    chmod +x /output/install-agent.sh /output/update-agent.sh
 
     echo "Agent built: /output/nekoproxy-agent"
     echo "Install script: /output/install-agent.sh"
+    echo "Update script:  /output/update-agent.sh"
 }
 
 build_controller() {
@@ -41,12 +43,14 @@ build_controller() {
 
     chmod +x /output/nekoproxy-controller
 
-    # Copy install script
+    # Copy install and update scripts
     cp /build/install-controller.sh /output/install-controller.sh
-    chmod +x /output/install-controller.sh
+    cp /build/update-controller.sh /output/update-controller.sh
+    chmod +x /output/install-controller.sh /output/update-controller.sh
 
     echo "Controller built: /output/nekoproxy-controller"
     echo "Install script: /output/install-controller.sh"
+    echo "Update script:  /output/update-controller.sh"
 }
 
 case $COMPONENT in

@@ -2,12 +2,16 @@
 
 import asyncio
 import logging
+import os
+import subprocess
+import sys
+from pathlib import Path
 from typing import Callable, Optional, Any
 
 try:
     from aiohttp import web
     AIOHTTP_AVAILABLE = True
-except ImportError as e:
+except ImportError:
     AIOHTTP_AVAILABLE = False
     web = None
 
@@ -50,6 +54,7 @@ class ControlAPI:
             self._app = web.Application()
             self._app.router.add_post("/trigger-sync", self._handle_trigger_sync)
             self._app.router.add_get("/health", self._handle_health)
+            self._app.router.add_post("/update-binary", self._handle_update_binary)
 
             # Email proxy endpoints
             self._app.router.add_post("/deploy-email", self._handle_deploy_email)
@@ -93,6 +98,68 @@ class ControlAPI:
     async def _handle_health(self, request: web.Request) -> web.Response:
         """Health check endpoint."""
         return web.json_response({"status": "healthy"})
+
+    async def _handle_update_binary(self, request: web.Request) -> web.Response:
+        """Receive new agent binary from controller, write to staging path, then spawn update script (agent will restart)."""
+        install_dir = settings.install_dir_resolved
+        is_windows = sys.platform == "win32"
+        staging_name = "nekoproxy-agent.new.exe" if is_windows else "nekoproxy-agent.new"
+        staging_path = install_dir / staging_name
+
+        try:
+            body = await request.read()
+            if not body:
+                return web.json_response({"status": "error", "message": "Empty body"}, status=400)
+            install_dir.mkdir(parents=True, exist_ok=True)
+            staging_path.write_bytes(body)
+            if not is_windows:
+                os.chmod(staging_path, 0o755)
+        except Exception as e:
+            logger.exception("Failed to write update binary")
+            return web.json_response({"status": "error", "message": str(e)}, status=500)
+
+        # Spawn detached process that will stop agent, replace binary, restart (after a short delay)
+        try:
+            if is_windows:
+                current_exe = getattr(sys, "executable", None) or str(staging_path)
+                ps = (
+                    f"Start-Sleep -Seconds 3; "
+                    f"Stop-Service -Name 'nekoproxy-agent' -Force -ErrorAction SilentlyContinue; "
+                    f"Start-Sleep -Seconds 2; "
+                    f"Copy-Item -Path '{staging_path}' -Destination '{current_exe}' -Force; "
+                    f"Start-Service -Name 'nekoproxy-agent'"
+                )
+                flags = getattr(subprocess, "CREATE_NO_WINDOW", 0) | getattr(subprocess, "DETACHED_PROCESS", 0)
+                subprocess.Popen(
+                    ["powershell", "-NoProfile", "-NonInteractive", "-Command", ps],
+                    creationflags=flags,
+                    stdin=subprocess.DEVNULL,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    cwd=str(install_dir),
+                )
+            else:
+                update_script = install_dir / "update-agent.sh"
+                if not update_script.is_file():
+                    return web.json_response(
+                        {"status": "error", "message": f"update-agent.sh not found in {install_dir}"},
+                        status=501
+                    )
+                cmd = ["/bin/sh", "-c", f"sleep 3; {update_script} {staging_path}"]
+                subprocess.Popen(
+                    cmd,
+                    start_new_session=True,
+                    stdin=subprocess.DEVNULL,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    cwd=str(install_dir),
+                )
+        except Exception as e:
+            logger.exception("Failed to spawn update process")
+            return web.json_response({"status": "error", "message": str(e)}, status=500)
+
+        logger.info("Update binary saved; restart scheduled")
+        return web.json_response({"status": "ok", "message": "Update received; agent will restart shortly"})
 
     async def _handle_deploy_email(self, request: web.Request) -> web.Response:
         """Handle email proxy deployment request from controller."""

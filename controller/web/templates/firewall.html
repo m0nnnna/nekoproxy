@@ -4,13 +4,13 @@
 
 {% block content %}
 <div class="flex justify-between items-center mb-6">
-    <h1 class="text-2xl font-bold text-gray-900">Firewall</h1>
+    <h1 class="text-2xl neko-header">Firewall</h1>
     <div class="flex items-center space-x-4">
         <span id="apply-status" class="text-sm"></span>
         <button hx-post="/firewall/apply"
                 hx-target="#apply-status"
                 hx-swap="innerHTML"
-                class="bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 flex items-center">
+                class="neko-btn-success px-4 py-2 flex items-center">
             <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
             </svg>
@@ -20,76 +20,63 @@
 </div>
 
 <!-- Info Banner -->
-<div class="bg-blue-50 border-l-4 border-blue-400 p-4 mb-6">
-    <div class="flex">
-        <div class="ml-3">
-            <p class="text-sm text-blue-700">
-                <strong>Firewall</strong> controls access to your services. Use port rules to block/allow specific ports on interfaces,
-                and the IP blocklist to deny access from specific IP addresses.
-            </p>
-        </div>
-    </div>
+<div class="neko-info mb-6">
+    <p class="text-sm">
+        <strong>Firewall</strong> controls access to your services. Use port rules to block/allow specific ports on interfaces.
+        Use the <a href="/blocklist" class="underline font-medium">Blocklist</a> page to deny access from specific IP addresses ~nya
+    </p>
 </div>
 
-<!-- Tabs -->
-<div class="mb-6">
-    <div class="border-b border-gray-200">
-        <nav class="-mb-px flex space-x-8" aria-label="Tabs">
-            <button onclick="showTab('port-rules')" id="tab-port-rules"
-                    class="tab-btn border-blue-500 text-blue-600 whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm">
-                Port Rules
-            </button>
-            <button onclick="showTab('blocklist')" id="tab-blocklist"
-                    class="tab-btn border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm">
-                IP Blocklist
-            </button>
-        </nav>
+<!-- Default blocked ports (public) - always applied on agents -->
+<div class="neko-card p-4 mb-6 border-l-4 border-neko-500">
+    <h2 class="text-lg neko-subheader mb-2">Default blocked ports (public interface)</h2>
+    <p class="text-sm text-neko-600 mb-2">These ports are never allowed on the public interface on agents, even if added as a proxy service. Use WireGuard for management access.</p>
+    <div class="flex flex-wrap gap-2">
+        {% for port in default_blocked_ports %}
+        <span class="px-2 py-1 bg-neko-100 text-neko-800 rounded text-sm font-mono">{{ port.port }} ({{ port.name }})</span>
+        {% endfor %}
     </div>
 </div>
 
 <!-- Port Rules Section -->
 <div id="section-port-rules">
     <!-- Add Firewall Rule Form -->
-    <div class="bg-white shadow rounded-lg p-6 mb-6">
-        <h2 class="text-lg font-semibold text-gray-900 mb-4">Add Port Rule</h2>
+    <div class="neko-card neko-card-ears p-6 mb-6 mt-4">
+        <h2 class="text-lg neko-subheader mb-4">Add Port Rule</h2>
         <form hx-post="/firewall" hx-target="#firewall-table" hx-swap="innerHTML" class="space-y-4">
             <div class="grid grid-cols-1 md:grid-cols-6 gap-4">
                 <div>
-                    <label class="block text-sm font-medium text-gray-700">Port</label>
+                    <label class="neko-label">Port</label>
                     <input type="number" name="port" required placeholder="22"
-                           class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm border px-3 py-2">
+                           class="neko-input w-full">
                 </div>
                 <div>
-                    <label class="block text-sm font-medium text-gray-700">Protocol</label>
-                    <select name="protocol"
-                            class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm border px-3 py-2">
+                    <label class="neko-label">Protocol</label>
+                    <select name="protocol" class="neko-input w-full">
                         {% for p in protocols %}
                         <option value="{{ p }}">{{ p.upper() }}</option>
                         {% endfor %}
                     </select>
                 </div>
                 <div>
-                    <label class="block text-sm font-medium text-gray-700">Interface</label>
-                    <select name="interface" required
-                            class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm border px-3 py-2">
+                    <label class="neko-label">Interface</label>
+                    <select name="interface" required class="neko-input w-full">
                         <option value="public">Public (internet)</option>
                         <option value="wireguard">WireGuard (VPN)</option>
                         <option value="all">All Interfaces</option>
                     </select>
                 </div>
                 <div>
-                    <label class="block text-sm font-medium text-gray-700">Action</label>
-                    <select name="action"
-                            class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm border px-3 py-2">
+                    <label class="neko-label">Action</label>
+                    <select name="action" class="neko-input w-full">
                         {% for a in actions %}
                         <option value="{{ a }}" {% if a == 'block' %}selected{% endif %}>{{ a.upper() }}</option>
                         {% endfor %}
                     </select>
                 </div>
                 <div>
-                    <label class="block text-sm font-medium text-gray-700">Agent</label>
-                    <select name="agent_id"
-                            class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm border px-3 py-2">
+                    <label class="neko-label">Agent</label>
+                    <select name="agent_id" class="neko-input w-full">
                         <option value="">All Agents</option>
                         {% for agent in agents %}
                         <option value="{{ agent.id }}">{{ agent.hostname }}</option>
@@ -99,13 +86,12 @@
             </div>
             <div class="grid grid-cols-1 md:grid-cols-6 gap-4 mt-4">
                 <div class="md:col-span-5">
-                    <label class="block text-sm font-medium text-gray-700">Description</label>
-                    <input type="text" name="description" placeholder="Optional"
-                           class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm border px-3 py-2">
+                    <label class="neko-label">Description</label>
+                    <input type="text" name="description" placeholder="Optional ~nya"
+                           class="neko-input w-full">
                 </div>
                 <div class="flex items-end">
-                    <button type="submit"
-                            class="w-full bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2">
+                    <button type="submit" class="neko-btn-primary w-full px-4 py-2">
                         Add Rule
                     </button>
                 </div>
@@ -114,8 +100,8 @@
     </div>
 
     <!-- Common Presets -->
-    <div class="bg-white shadow rounded-lg p-6 mb-6">
-        <h2 class="text-lg font-semibold text-gray-900 mb-4">Quick Presets</h2>
+    <div class="neko-card p-6 mb-6">
+        <h2 class="text-lg neko-subheader mb-4">Quick Presets</h2>
         <div class="flex flex-wrap gap-2">
             <form hx-post="/firewall" hx-target="#firewall-table" hx-swap="innerHTML" class="inline">
                 <input type="hidden" name="port" value="22">
@@ -123,7 +109,7 @@
                 <input type="hidden" name="interface" value="public">
                 <input type="hidden" name="action" value="block">
                 <input type="hidden" name="description" value="Block SSH from public">
-                <button type="submit" class="bg-red-100 text-red-800 px-3 py-1 rounded-md text-sm hover:bg-red-200">
+                <button type="submit" class="neko-preset-danger">
                     Block SSH (22) on Public
                 </button>
             </form>
@@ -133,7 +119,7 @@
                 <input type="hidden" name="interface" value="wireguard">
                 <input type="hidden" name="action" value="allow">
                 <input type="hidden" name="description" value="Allow SSH via WireGuard">
-                <button type="submit" class="bg-green-100 text-green-800 px-3 py-1 rounded-md text-sm hover:bg-green-200">
+                <button type="submit" class="neko-preset-success">
                     Allow SSH (22) on WireGuard
                 </button>
             </form>
@@ -143,7 +129,7 @@
                 <input type="hidden" name="interface" value="public">
                 <input type="hidden" name="action" value="block">
                 <input type="hidden" name="description" value="Block MySQL from public">
-                <button type="submit" class="bg-red-100 text-red-800 px-3 py-1 rounded-md text-sm hover:bg-red-200">
+                <button type="submit" class="neko-preset-danger">
                     Block MySQL (3306) on Public
                 </button>
             </form>
@@ -153,7 +139,7 @@
                 <input type="hidden" name="interface" value="public">
                 <input type="hidden" name="action" value="block">
                 <input type="hidden" name="description" value="Block PostgreSQL from public">
-                <button type="submit" class="bg-red-100 text-red-800 px-3 py-1 rounded-md text-sm hover:bg-red-200">
+                <button type="submit" class="neko-preset-danger">
                     Block PostgreSQL (5432) on Public
                 </button>
             </form>
@@ -161,96 +147,26 @@
     </div>
 
     <!-- Firewall Rules Table -->
-    <div class="bg-white shadow rounded-lg overflow-hidden">
-        <table class="min-w-full divide-y divide-gray-200">
-            <thead class="bg-gray-50">
-                <tr>
-                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
-                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Port</th>
-                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Protocol</th>
-                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Interface</th>
-                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Action</th>
-                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Agent</th>
-                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Description</th>
-                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
-                </tr>
-            </thead>
-            <tbody class="bg-white divide-y divide-gray-200" id="firewall-table">
-                {% include "partials/firewall_table.html" %}
-            </tbody>
-        </table>
+    <div class="neko-table-container">
+        <div class="neko-scroll">
+            <table class="min-w-full neko-table">
+                <thead class="sticky top-0 z-10">
+                    <tr>
+                        <th class="text-left">Status</th>
+                        <th class="text-left">Port</th>
+                        <th class="text-left">Protocol</th>
+                        <th class="text-left">Interface</th>
+                        <th class="text-left">Action</th>
+                        <th class="text-left">Agent</th>
+                        <th class="text-left">Description</th>
+                        <th class="text-left">Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="firewall-table">
+                    {% include "partials/firewall_table.html" %}
+                </tbody>
+            </table>
+        </div>
     </div>
 </div>
-
-<!-- Blocklist Section -->
-<div id="section-blocklist" class="hidden">
-    <!-- Add to Blocklist Form -->
-    <div class="bg-white shadow rounded-lg p-6 mb-6">
-        <h2 class="text-lg font-semibold text-gray-900 mb-4">Block IP Address</h2>
-        <form hx-post="/blocklist" hx-target="#blocklist-table" hx-swap="innerHTML" class="space-y-4">
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div>
-                    <label class="block text-sm font-medium text-gray-700">IP Address</label>
-                    <input type="text" name="ip" required placeholder="192.168.1.100"
-                           pattern="^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$"
-                           class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm border px-3 py-2">
-                </div>
-                <div>
-                    <label class="block text-sm font-medium text-gray-700">Reason (optional)</label>
-                    <input type="text" name="reason" placeholder="Suspicious activity"
-                           class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm border px-3 py-2">
-                </div>
-                <div class="flex items-end">
-                    <button type="submit"
-                            class="w-full bg-red-600 text-white px-4 py-2 rounded-md hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2">
-                        Block IP
-                    </button>
-                </div>
-            </div>
-        </form>
-    </div>
-
-    <!-- Blocklist Table -->
-    <div class="bg-white shadow rounded-lg overflow-hidden">
-        <table class="min-w-full divide-y divide-gray-200">
-            <thead class="bg-gray-50">
-                <tr>
-                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">IP Address</th>
-                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Reason</th>
-                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Added At</th>
-                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
-                </tr>
-            </thead>
-            <tbody class="bg-white divide-y divide-gray-200" id="blocklist-table">
-                {% include "partials/blocklist_table.html" %}
-            </tbody>
-        </table>
-    </div>
-
-    <div class="mt-4 text-sm text-gray-500">
-        Blocked IPs are synchronized to all agents. Connections from blocked IPs are immediately rejected.
-    </div>
-</div>
-
-<script>
-function showTab(tabName) {
-    // Hide all sections
-    document.getElementById('section-port-rules').classList.add('hidden');
-    document.getElementById('section-blocklist').classList.add('hidden');
-
-    // Reset all tab styles
-    document.querySelectorAll('.tab-btn').forEach(btn => {
-        btn.classList.remove('border-blue-500', 'text-blue-600');
-        btn.classList.add('border-transparent', 'text-gray-500');
-    });
-
-    // Show selected section
-    document.getElementById('section-' + tabName).classList.remove('hidden');
-
-    // Highlight selected tab
-    const selectedTab = document.getElementById('tab-' + tabName);
-    selectedTab.classList.remove('border-transparent', 'text-gray-500');
-    selectedTab.classList.add('border-blue-500', 'text-blue-600');
-}
-</script>
 {% endblock %}

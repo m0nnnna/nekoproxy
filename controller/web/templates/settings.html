@@ -1,0 +1,132 @@
+{% extends "base.html" %}
+
+{% block title %}Settings - NekoProxy{% endblock %}
+
+{% block content %}
+<div class="flex justify-between items-center mb-6">
+    <h1 class="text-2xl neko-header">Settings</h1>
+    <span id="settings-apply-status" class="text-sm"></span>
+</div>
+
+<div class="neko-info mb-6">
+    <p class="text-sm">
+        These settings are pushed to agents when you click <strong>Apply</strong>. Choose which agents to push to below.
+        Controller URL is the URL agents use to reach this controller (e.g. <code>https://controller.example.com</code> for HTTPS). ~nya
+    </p>
+</div>
+
+<form hx-post="/settings/apply"
+      hx-target="#settings-apply-status"
+      hx-swap="innerHTML"
+      class="space-y-6">
+    <div class="neko-card neko-card-ears p-6">
+        <h2 class="text-lg neko-subheader mb-4">Controller &amp; agent</h2>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div class="md:col-span-2">
+                <label class="neko-label">Controller URL (for agents)</label>
+                <input type="url" name="controller_url" value="{{ settings.controller_url or '' }}"
+                       placeholder="https://controller.example.com or http://10.0.0.1:8001"
+                       class="neko-input w-full">
+                <p class="text-xs text-neko-500 mt-1">Agents set NEKO_AGENT_CONTROLLER_URL to this. Use https:// when behind SSL.</p>
+            </div>
+            <div>
+                <label class="neko-label">Agent secret (optional)</label>
+                <input type="password" name="agent_secret" value=""
+                       placeholder="Leave blank to disable"
+                       class="neko-input w-full" autocomplete="new-password">
+                <p class="text-xs text-neko-500 mt-1">Agents must send this when registering. Set on agents as NEKO_AGENT_AGENT_SECRET.</p>
+            </div>
+        </div>
+    </div>
+
+    <div class="neko-card neko-card-ears p-6">
+        <h2 class="text-lg neko-subheader mb-4">GeoIP filtering</h2>
+        <p class="text-sm text-neko-600 mb-4">Allow or block connections by country. Agents need GeoLite2-Country.mmdb and NEKO_AGENT_GEOLITE2_DB_PATH set.</p>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+                <label class="neko-label">Geo mode</label>
+                <select name="geo_mode" class="neko-input w-full">
+                    <option value="off" {% if (settings.geo_mode or 'off') == 'off' %}selected{% endif %}>Off</option>
+                    <option value="allowlist" {% if (settings.geo_mode or '') == 'allowlist' %}selected{% endif %}>Allowlist (only these countries)</option>
+                    <option value="blocklist" {% if (settings.geo_mode or '') == 'blocklist' %}selected{% endif %}>Blocklist (block these countries)</option>
+                </select>
+            </div>
+            <div>
+                <label class="neko-label">Countries (ISO codes, comma-separated)</label>
+                <input type="text" name="geo_countries" value="{{ settings.geo_countries or '' }}"
+                       placeholder="US,CA,GB or CN,RU,KP"
+                       class="neko-input w-full">
+            </div>
+        </div>
+    </div>
+
+    <div class="neko-card neko-card-ears p-6">
+        <h2 class="text-lg neko-subheader mb-4">Connection &amp; lockdown</h2>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+                <label class="neko-label">Idle connection timeout (seconds)</label>
+                <input type="number" name="idle_connection_timeout_seconds" min="0" value="{{ settings.idle_connection_timeout_seconds or 0 }}"
+                       class="neko-input w-full">
+                <p class="text-xs text-neko-500 mt-1">0 = disabled. Close proxy connections after this many seconds with no data.</p>
+            </div>
+            <div class="flex items-end">
+                <label class="flex items-center gap-2 cursor-pointer">
+                    <input type="checkbox" name="paranoid" value="1" {% if settings.paranoid %}checked{% endif %}
+                           class="rounded border-neko-300">
+                    <span class="neko-label mb-0">Paranoid (DDoS lockdown)</span>
+                </label>
+                <p class="text-xs text-neko-500 mt-1 ml-6">Forces 120s idle timeout, default geo blocklist (CN,RU,KP,IR) if geo off.</p>
+            </div>
+        </div>
+    </div>
+
+    <div class="neko-card neko-card-ears p-6">
+        <h2 class="text-lg neko-subheader mb-4">Apply to agents</h2>
+        <div class="space-y-3">
+            <label class="flex items-center gap-2 cursor-pointer">
+                <input type="radio" name="apply_to" value="all" checked class="rounded-full border-neko-300">
+                <span>All agents</span>
+            </label>
+            <p class="text-sm text-neko-600">Or select specific agents:</p>
+            <div class="flex flex-wrap gap-3 pl-6">
+                {% for agent in agents %}
+                <label class="flex items-center gap-2 cursor-pointer">
+                    <input type="checkbox" name="agent_ids" value="{{ agent.id }}"
+                           class="rounded border-neko-300 agent-checkbox">
+                    <span>{{ agent.hostname }} ({{ agent.wireguard_ip }})</span>
+                </label>
+                {% endfor %}
+            </div>
+            <p class="text-xs text-neko-500">If you check specific agents, choose "Apply to selected" below.</p>
+            <label class="flex items-center gap-2 cursor-pointer mt-2">
+                <input type="radio" name="apply_to" value="selected" class="rounded-full border-neko-300">
+                <span>Only selected agents (above)</span>
+            </label>
+        </div>
+    </div>
+
+    <div class="flex items-center gap-4">
+        <button type="submit" class="neko-btn-success px-6 py-2 flex items-center">
+            <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+            </svg>
+            Save &amp; Apply
+        </button>
+    </div>
+</form>
+
+<script>
+document.querySelector('form[hx-post="/settings/apply"]').addEventListener('submit', function(e) {
+    var applyTo = document.querySelector('input[name="apply_to"]:checked').value;
+    if (applyTo === 'selected') {
+        var checked = document.querySelectorAll('.agent-checkbox:checked');
+        if (checked.length === 0) {
+            e.preventDefault();
+            e.stopPropagation();
+            document.getElementById('settings-apply-status').innerHTML = '<span class="text-red-500">Select at least one agent.</span>';
+            return false;
+        }
+    }
+});
+</script>
+{% endblock %}

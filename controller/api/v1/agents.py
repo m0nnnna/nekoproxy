@@ -1,8 +1,9 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
+from controller.config import settings as controller_settings
 from controller.database.database import get_db
-from controller.database.repositories import AgentRepository
+from controller.database.repositories import AgentRepository, GlobalSettingsRepository
 from controller.core.agent_manager import AgentManager
 from shared.models import AgentRegistration, AgentHeartbeat, AgentConfig, AgentStatus
 
@@ -12,6 +13,11 @@ router = APIRouter()
 @router.post("/register", response_model=AgentStatus)
 def register_agent(registration: AgentRegistration, db: Session = Depends(get_db)):
     """Register a new agent or update existing registration."""
+    gs = GlobalSettingsRepository(db).get()
+    agent_secret = (gs.agent_secret if gs and gs.agent_secret else None) or controller_settings.agent_secret
+    if agent_secret:
+        if not registration.agent_secret or registration.agent_secret != agent_secret:
+            raise HTTPException(status_code=401, detail="Invalid or missing agent secret")
     manager = AgentManager(db)
     agent = manager.register_agent(registration)
     return AgentStatus(

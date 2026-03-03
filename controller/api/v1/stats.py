@@ -5,7 +5,7 @@ from typing import Optional
 from datetime import datetime
 
 from controller.database.database import get_db
-from controller.database.repositories import ConnectionStatRepository, EmailStatRepository
+from controller.database.repositories import ConnectionStatRepository, EmailStatRepository, FirewallStatRepository
 from shared.models import StatsReport
 
 router = APIRouter()
@@ -58,6 +58,33 @@ class EmailStatResponse(BaseModel):
 class EmailStatsReport(BaseModel):
     agent_id: int
     emails: list[dict]
+
+
+class FirewallStatsSummary(BaseModel):
+    total_firewall_packets: int
+    total_firewall_bytes: int
+    blocked_packets: int
+    blocked_bytes: int
+    allowed_packets: int
+    allowed_bytes: int
+    period_hours: Optional[int]
+
+
+class FirewallStatResponse(BaseModel):
+    id: int
+    agent_id: int
+    port: int
+    protocol: str
+    interface: str
+    action: str
+    packets: int
+    bytes_count: int
+    timestamp: str
+
+
+class FirewallStatsReportRequest(BaseModel):
+    agent_id: int
+    rules: list[dict]
 
 
 @router.post("/connections")
@@ -229,6 +256,70 @@ def get_agent_email_stats(agent_id: int, limit: int = 100, db: Session = Depends
             bytes_sent=s.bytes_sent,
             bytes_received=s.bytes_received,
             message_id=s.message_id,
+            timestamp=s.timestamp.isoformat()
+        )
+        for s in stats
+    ]
+
+
+# Firewall Stats Endpoints
+
+@router.post("/firewall")
+def report_firewall_stats(report: FirewallStatsReportRequest, db: Session = Depends(get_db)):
+    """Receive firewall (iptables) statistics from an agent."""
+    repo = FirewallStatRepository(db)
+
+    stats_data = []
+    for rule in report.rules:
+        timestamp = rule.get("timestamp")
+        if isinstance(timestamp, str):
+            try:
+                timestamp = datetime.fromisoformat(timestamp)
+            except (ValueError, TypeError):
+                timestamp = datetime.utcnow()
+        elif timestamp is None:
+            timestamp = datetime.utcnow()
+
+        stats_data.append({
+            "agent_id": report.agent_id,
+            "port": rule.get("port", 0),
+            "protocol": rule.get("protocol", "tcp"),
+            "interface": rule.get("interface", "unknown"),
+            "action": rule.get("action", "block"),
+            "packets": rule.get("packets", 0),
+            "bytes_count": rule.get("bytes", 0),
+            "timestamp": timestamp
+        })
+
+    count = repo.add_batch(stats_data)
+    return {"status": "accepted", "count": count}
+
+
+@router.get("/firewall/summary", response_model=FirewallStatsSummary)
+def get_firewall_stats_summary(hours: Optional[int] = 24, db: Session = Depends(get_db)):
+    """Get aggregated firewall statistics. Use hours=0 for lifetime."""
+    repo = FirewallStatRepository(db)
+    if hours == 0:
+        hours = None
+    return repo.get_stats_summary(hours=hours)
+
+
+@router.get("/firewall/recent", response_model=list[FirewallStatResponse])
+def get_recent_firewall_stats(hours: int = 24, limit: int = 100, db: Session = Depends(get_db)):
+    """Get recent firewall statistics."""
+    repo = FirewallStatRepository(db)
+    stats = repo.get_recent(hours=hours, limit=limit)
+
+    return [
+        FirewallStatResponse(
+            id=s.id,
+            agent_id=s.agent_id,
+            port=s.port,
+            protocol=s.protocol,
+            interface=s.interface,
+            action=s.action,
+            packets=s.packets,
+            bytes_count=s.bytes_count,
             timestamp=s.timestamp.isoformat()
         )
         for s in stats

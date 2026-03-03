@@ -1,7 +1,7 @@
 # -*- mode: python ; coding: utf-8 -*-
 """PyInstaller spec file for NekoProxy Agent.
 
-Build for Linux (Ubuntu) only.
+Build for Linux (Ubuntu) and Windows. On Windows the exe supports install/start/stop/remove as a service.
 """
 
 import sys
@@ -66,6 +66,15 @@ a = Analysis(
         'aiosignal',
         'frozenlist',
         'attrs',
+        # Windows service (install/start/stop/remove)
+        'win32serviceutil',
+        'win32service',
+        'win32event',
+        'win32api',
+        'win32con',
+        'win32timezone',
+        'servicemanager',
+        'shared.win_service',
     ],
     hookspath=[],
     hooksconfig={},

@@ -4,13 +4,13 @@
 
 {% block content %}
 <div class="flex justify-between items-center mb-6">
-    <h1 class="text-2xl font-bold text-gray-900">Email Proxy</h1>
+    <h1 class="text-2xl neko-header">Email Proxy</h1>
     <div class="flex items-center space-x-4">
         <span id="apply-status" class="text-sm"></span>
         <button hx-post="/email/apply"
                 hx-target="#apply-status"
                 hx-swap="innerHTML"
-                class="bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 flex items-center">
+                class="neko-btn-success px-4 py-2 flex items-center">
             <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
             </svg>
@@ -20,19 +20,15 @@
 </div>
 
 <!-- Info Banner -->
-<div class="bg-blue-50 border-l-4 border-blue-400 p-4 mb-6">
-    <div class="flex">
-        <div class="ml-3">
-            <p class="text-sm text-blue-700">
-                <strong>Email Proxy</strong> relays email through Postfix + SASL to your Mailcow server.
-                Only SASL-authenticated users can send email. Outgoing emails are stamped with the proxy's IP address.
-            </p>
-        </div>
-    </div>
+<div class="neko-info mb-6">
+    <p class="text-sm">
+        <strong>Email Proxy</strong> relays email through Postfix + SASL to your Mailcow server.
+        Only SASL-authenticated users can send email. Outgoing emails are stamped with the proxy's IP address ~nya
+    </p>
 </div>
 
-<!-- Password Display Area (shared across sections) -->
-<div id="password-display" class="hidden bg-yellow-50 border-l-4 border-yellow-400 p-4 mb-6">
+<!-- Password Display Area -->
+<div id="password-display" class="hidden neko-password-display p-4 mb-6">
     <div class="flex justify-between items-start">
         <div>
             <p class="text-sm text-yellow-700">
@@ -41,7 +37,7 @@
             <p class="text-sm text-yellow-700 mt-1">
                 <strong>Password:</strong> <span id="generated-password" class="font-mono bg-yellow-100 px-2 py-1 rounded select-all"></span>
             </p>
-            <p class="text-xs text-yellow-600 mt-1">Save this password now - it won't be shown again! Click X to dismiss.</p>
+            <p class="text-xs text-yellow-600 mt-1">Save this password now - it won't be shown again! Click X to dismiss ~nya</p>
         </div>
         <button onclick="document.getElementById('password-display').classList.add('hidden')" class="text-yellow-600 hover:text-yellow-800">
             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -52,39 +48,38 @@
 </div>
 
 <!-- Mailcow Configuration Section -->
-<div class="bg-white shadow rounded-lg p-6 mb-6">
-    <h2 class="text-lg font-semibold text-gray-900 mb-4">Mailcow Connection</h2>
+<div class="neko-card neko-card-ears p-6 mb-6 mt-4">
+    <h2 class="text-lg neko-subheader mb-4">Mailcow Connection</h2>
     <form hx-post="/email/config" hx-target="#config-status" hx-swap="innerHTML" class="space-y-4">
         <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
             <div>
-                <label class="block text-sm font-medium text-gray-700">Mailcow SMTP Host</label>
+                <label class="neko-label">Mailcow SMTP Host</label>
                 <input type="text" name="mailcow_host" required placeholder="mail.example.com"
                        value="{{ config.mailcow_host if config else '' }}"
-                       class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm border px-3 py-2">
-                <p class="mt-1 text-xs text-gray-500">SMTP server for mail relay</p>
+                       class="neko-input w-full">
+                <p class="mt-1 text-xs text-neko-400">SMTP server for mail relay</p>
             </div>
             <div>
-                <label class="block text-sm font-medium text-gray-700">SMTP Port</label>
+                <label class="neko-label">SMTP Port</label>
                 <input type="number" name="mailcow_port" value="{{ config.mailcow_port if config else 25 }}"
-                       class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm border px-3 py-2">
-                <p class="mt-1 text-xs text-gray-500">Usually 25, 465, or 587</p>
+                       class="neko-input w-full">
+                <p class="mt-1 text-xs text-neko-400">Usually 25, 465, or 587</p>
             </div>
             <div>
-                <label class="block text-sm font-medium text-gray-700">Web UI URL</label>
+                <label class="neko-label">Web UI URL</label>
                 <input type="url" name="mailcow_api_url" placeholder="https://mail.example.com"
                        value="{{ config.mailcow_api_url if config else '' }}"
-                       class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm border px-3 py-2">
-                <p class="mt-1 text-xs text-gray-500">For mailbox creation API</p>
+                       class="neko-input w-full">
+                <p class="mt-1 text-xs text-neko-400">For mailbox creation API</p>
             </div>
             <div>
-                <label class="block text-sm font-medium text-gray-700">API Key</label>
+                <label class="neko-label">API Key</label>
                 <input type="password" name="mailcow_api_key" placeholder="Mailcow API key"
-                       class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm border px-3 py-2">
-                <p class="mt-1 text-xs text-gray-500">From Mailcow admin panel</p>
+                       class="neko-input w-full">
+                <p class="mt-1 text-xs text-neko-400">From Mailcow admin panel</p>
             </div>
             <div class="flex items-end">
-                <button type="submit"
-                        class="w-full bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2">
+                <button type="submit" class="neko-btn-primary w-full px-4 py-2">
                     Save Configuration
                 </button>
             </div>
@@ -94,26 +89,25 @@
 </div>
 
 <!-- Deploy to Agents Section -->
-<div class="bg-white shadow rounded-lg p-6 mb-6">
-    <h2 class="text-lg font-semibold text-gray-900 mb-4">Deploy Email Proxy</h2>
-    <p class="text-sm text-gray-500 mb-4">
-        Deploy Postfix + SASL to selected agents. This will install and configure the email relay service.
+<div class="neko-card p-6 mb-6">
+    <h2 class="text-lg neko-subheader mb-4">Deploy Email Proxy</h2>
+    <p class="text-sm text-neko-500 mb-4">
+        Deploy Postfix + SASL to selected agents. This will install and configure the email relay service ~nya
     </p>
     <form hx-post="/email/deploy" hx-target="#deploy-status" hx-swap="innerHTML">
         <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
             <div>
-                <label class="block text-sm font-medium text-gray-700">Select Agents</label>
+                <label class="neko-label">Select Agents</label>
                 <select name="agent_ids" multiple
-                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm border px-3 py-2 h-32">
+                        class="neko-input w-full h-32">
                     {% for agent in agents %}
                     <option value="{{ agent.id }}">{{ agent.hostname }} ({{ agent.wireguard_ip }})</option>
                     {% endfor %}
                 </select>
-                <p class="mt-1 text-xs text-gray-500">Hold Ctrl/Cmd to select multiple</p>
+                <p class="mt-1 text-xs text-neko-400">Hold Ctrl/Cmd to select multiple</p>
             </div>
             <div class="flex items-center">
-                <button type="submit"
-                        class="bg-purple-600 text-white px-4 py-2 rounded-md hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2">
+                <button type="submit" class="neko-btn-primary px-4 py-2">
                     Deploy to Selected
                 </button>
             </div>
@@ -123,16 +117,16 @@
 
     <!-- Deployment Status Table -->
     <div class="mt-4">
-        <h3 class="text-sm font-medium text-gray-700 mb-2">Deployment Status</h3>
-        <table class="min-w-full divide-y divide-gray-200">
-            <thead class="bg-gray-50">
+        <h3 class="text-sm neko-label mb-2">Deployment Status</h3>
+        <table class="min-w-full neko-table">
+            <thead>
                 <tr>
-                    <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Agent</th>
-                    <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Mailcow Host</th>
-                    <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                    <th class="text-left">Agent</th>
+                    <th class="text-left">Mailcow Host</th>
+                    <th class="text-left">Status</th>
                 </tr>
             </thead>
-            <tbody id="deployment-table" class="bg-white divide-y divide-gray-200">
+            <tbody id="deployment-table">
                 {% include "partials/email_deployment_table.html" %}
             </tbody>
         </table>
@@ -140,28 +134,27 @@
 </div>
 
 <!-- SASL Users Section -->
-<div class="bg-white shadow rounded-lg p-6 mb-6">
-    <h2 class="text-lg font-semibold text-gray-900 mb-4">SASL Authentication Users</h2>
-    <p class="text-sm text-gray-500 mb-4">
-        Mailcow uses these credentials to connect to the proxy for outbound relay. Create matching users in Mailcow's Transport settings.
+<div class="neko-card p-6 mb-6">
+    <h2 class="text-lg neko-subheader mb-4">SASL Authentication Users</h2>
+    <p class="text-sm text-neko-500 mb-4">
+        Mailcow uses these credentials to connect to the proxy for outbound relay. Create matching users in Mailcow's Transport settings ~nya
     </p>
     <form hx-post="/email/sasl" hx-target="#sasl-table" hx-swap="innerHTML" class="space-y-4 mb-4">
         <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div>
-                <label class="block text-sm font-medium text-gray-700">Username</label>
+                <label class="neko-label">Username</label>
                 <input type="text" name="username" required placeholder="user@example.com"
-                       class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm border px-3 py-2">
-                <p class="mt-1 text-xs text-gray-500">Usually the email address</p>
+                       class="neko-input w-full">
+                <p class="mt-1 text-xs text-neko-400">Usually the email address</p>
             </div>
             <div>
-                <label class="block text-sm font-medium text-gray-700">Password</label>
+                <label class="neko-label">Password</label>
                 <input type="password" name="password" required placeholder="Strong password"
-                       class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm border px-3 py-2">
+                       class="neko-input w-full">
             </div>
             <div>
-                <label class="block text-sm font-medium text-gray-700">Agent</label>
-                <select name="agent_id"
-                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm border px-3 py-2">
+                <label class="neko-label">Agent</label>
+                <select name="agent_id" class="neko-input w-full">
                     <option value="">All Agents</option>
                     {% for agent in agents %}
                     <option value="{{ agent.id }}">{{ agent.hostname }}</option>
@@ -169,8 +162,7 @@
                 </select>
             </div>
             <div class="flex items-end">
-                <button type="submit"
-                        class="w-full bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2">
+                <button type="submit" class="neko-btn-success w-full px-4 py-2">
                     Add SASL User
                 </button>
             </div>
@@ -178,81 +170,83 @@
     </form>
     <div id="sasl-status" class="mb-4"></div>
 
-    <table class="min-w-full divide-y divide-gray-200">
-        <thead class="bg-gray-50">
-            <tr>
-                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Enabled</th>
-                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Username</th>
-                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Agent</th>
-                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
-            </tr>
-        </thead>
-        <tbody id="sasl-table" class="bg-white divide-y divide-gray-200">
-            {% include "partials/email_sasl_table.html" %}
-        </tbody>
-    </table>
+    <div class="neko-scroll">
+        <table class="min-w-full neko-table">
+            <thead class="sticky top-0 z-10">
+                <tr>
+                    <th class="text-left">Enabled</th>
+                    <th class="text-left">Username</th>
+                    <th class="text-left">Agent</th>
+                    <th class="text-left">Actions</th>
+                </tr>
+            </thead>
+            <tbody id="sasl-table">
+                {% include "partials/email_sasl_table.html" %}
+            </tbody>
+        </table>
+    </div>
 </div>
 
 <!-- Relay Domains Section -->
-<div class="bg-white shadow rounded-lg p-6 mb-6">
-    <h2 class="text-lg font-semibold text-gray-900 mb-4">Relay Domains</h2>
-    <p class="text-sm text-gray-500 mb-4">
-        Domains the proxy will accept email for. Sync from Mailcow to auto-import all configured domains.
+<div class="neko-card p-6 mb-6">
+    <h2 class="text-lg neko-subheader mb-4">Relay Domains</h2>
+    <p class="text-sm text-neko-500 mb-4">
+        Domains the proxy will accept email for. Sync from Mailcow to auto-import all configured domains ~nya
     </p>
     <div class="flex space-x-4 mb-4">
         <form hx-post="/email/domains" hx-target="#domains-table" hx-swap="innerHTML" class="flex space-x-2">
             <input type="text" name="domain" required placeholder="example.com"
-                   class="rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm border px-3 py-2">
-            <button type="submit"
-                    class="bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2">
+                   class="neko-input">
+            <button type="submit" class="neko-btn-success px-4 py-2">
                 Add Domain
             </button>
         </form>
         <button hx-post="/email/domains/sync"
                 hx-target="#domains-table"
                 hx-swap="innerHTML"
-                class="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2">
+                class="neko-btn-primary px-4 py-2">
             Sync from Mailcow
         </button>
     </div>
 
-    <table class="min-w-full divide-y divide-gray-200">
-        <thead class="bg-gray-50">
-            <tr>
-                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Enabled</th>
-                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Domain</th>
-                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Source</th>
-                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
-            </tr>
-        </thead>
-        <tbody id="domains-table" class="bg-white divide-y divide-gray-200">
-            {% include "partials/email_domains_table.html" %}
-        </tbody>
-    </table>
+    <div class="neko-scroll">
+        <table class="min-w-full neko-table">
+            <thead class="sticky top-0 z-10">
+                <tr>
+                    <th class="text-left">Enabled</th>
+                    <th class="text-left">Domain</th>
+                    <th class="text-left">Source</th>
+                    <th class="text-left">Actions</th>
+                </tr>
+            </thead>
+            <tbody id="domains-table">
+                {% include "partials/email_domains_table.html" %}
+            </tbody>
+        </table>
+    </div>
 </div>
 
 <!-- Authorized Senders Section -->
-<div class="bg-white shadow rounded-lg p-6 mb-6">
-    <h2 class="text-lg font-semibold text-gray-900 mb-4">Authorized Senders</h2>
-    <p class="text-sm text-gray-500 mb-4">
-        Email addresses authorized to send through the proxy without SASL authentication.
+<div class="neko-card p-6 mb-6">
+    <h2 class="text-lg neko-subheader mb-4">Authorized Senders</h2>
+    <p class="text-sm text-neko-500 mb-4">
+        Email addresses authorized to send through the proxy without SASL authentication ~nya
     </p>
     <form hx-post="/email/users" hx-target="#users-table" hx-swap="innerHTML" class="space-y-4 mb-4">
         <div class="grid grid-cols-1 md:grid-cols-5 gap-4">
             <div>
-                <label class="block text-sm font-medium text-gray-700">Email Address</label>
+                <label class="neko-label">Email Address</label>
                 <input type="email" name="email_address" required placeholder="user@example.com"
-                       class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm border px-3 py-2">
+                       class="neko-input w-full">
             </div>
             <div>
-                <label class="block text-sm font-medium text-gray-700">Display Name</label>
+                <label class="neko-label">Display Name</label>
                 <input type="text" name="display_name" placeholder="John Doe"
-                       class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm border px-3 py-2">
+                       class="neko-input w-full">
             </div>
             <div>
-                <label class="block text-sm font-medium text-gray-700">Agent</label>
-                <select name="agent_id"
-                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm border px-3 py-2">
+                <label class="neko-label">Agent</label>
+                <select name="agent_id" class="neko-input w-full">
                     <option value="">All Agents</option>
                     {% for agent in agents %}
                     <option value="{{ agent.id }}">{{ agent.hostname }}</option>
@@ -260,116 +254,119 @@
                 </select>
             </div>
             <div class="flex items-center">
-                <label class="flex items-center text-sm text-gray-700">
+                <label class="flex items-center text-sm text-neko-700">
                     <input type="checkbox" name="create_mailcow_mailbox" value="true"
-                           class="rounded border-gray-300 text-blue-600 focus:ring-blue-500 mr-2">
+                           class="rounded border-neko-300 text-neko-500 focus:ring-neko-400 mr-2">
                     Create Mailcow Mailbox
                 </label>
             </div>
             <div class="flex items-end">
-                <button type="submit"
-                        class="w-full bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2">
+                <button type="submit" class="neko-btn-success w-full px-4 py-2">
                     Add Sender
                 </button>
             </div>
         </div>
     </form>
 
-    <table class="min-w-full divide-y divide-gray-200">
-        <thead class="bg-gray-50">
-            <tr>
-                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Enabled</th>
-                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Email</th>
-                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
-                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Agent</th>
-                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
-            </tr>
-        </thead>
-        <tbody id="users-table" class="bg-white divide-y divide-gray-200">
-            {% include "partials/email_users_table.html" %}
-        </tbody>
-    </table>
+    <div class="neko-scroll">
+        <table class="min-w-full neko-table">
+            <thead class="sticky top-0 z-10">
+                <tr>
+                    <th class="text-left">Enabled</th>
+                    <th class="text-left">Email</th>
+                    <th class="text-left">Name</th>
+                    <th class="text-left">Agent</th>
+                    <th class="text-left">Actions</th>
+                </tr>
+            </thead>
+            <tbody id="users-table">
+                {% include "partials/email_users_table.html" %}
+            </tbody>
+        </table>
+    </div>
 </div>
 
 <!-- Mailcow Mailboxes Section -->
-<div class="bg-white shadow rounded-lg p-6 mb-6">
-    <h2 class="text-lg font-semibold text-gray-900 mb-4">Mailcow Mailboxes</h2>
-    <p class="text-sm text-gray-500 mb-4">
-        View existing mailboxes in Mailcow. Manage mailboxes directly in Mailcow admin.
+<div class="neko-card p-6 mb-6">
+    <h2 class="text-lg neko-subheader mb-4">Mailcow Mailboxes</h2>
+    <p class="text-sm text-neko-500 mb-4">
+        View existing mailboxes in Mailcow. Manage mailboxes directly in Mailcow admin ~nya
     </p>
     <button hx-get="/email/mailcow/mailboxes"
             hx-target="#mailboxes-table"
             hx-swap="innerHTML"
-            class="mb-4 bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2">
+            class="neko-btn-primary mb-4 px-4 py-2">
         Refresh Mailboxes
     </button>
 
-    <table class="min-w-full divide-y divide-gray-200">
-        <thead class="bg-gray-50">
-            <tr>
-                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Email</th>
-                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
-                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Domain</th>
-                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
-                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Quota</th>
-            </tr>
-        </thead>
-        <tbody id="mailboxes-table" class="bg-white divide-y divide-gray-200">
-            {% include "partials/email_mailcow_mailboxes.html" %}
-        </tbody>
-    </table>
+    <div class="neko-scroll">
+        <table class="min-w-full neko-table">
+            <thead class="sticky top-0 z-10">
+                <tr>
+                    <th class="text-left">Email</th>
+                    <th class="text-left">Name</th>
+                    <th class="text-left">Domain</th>
+                    <th class="text-left">Status</th>
+                    <th class="text-left">Quota</th>
+                </tr>
+            </thead>
+            <tbody id="mailboxes-table">
+                {% include "partials/email_mailcow_mailboxes.html" %}
+            </tbody>
+        </table>
+    </div>
 </div>
 
 <!-- Mailcow Aliases Section -->
-<div class="bg-white shadow rounded-lg p-6 mb-6">
-    <h2 class="text-lg font-semibold text-gray-900 mb-4">Mailcow Aliases</h2>
-    <p class="text-sm text-gray-500 mb-4">
-        Manage email aliases in Mailcow.
+<div class="neko-card p-6 mb-6">
+    <h2 class="text-lg neko-subheader mb-4">Mailcow Aliases</h2>
+    <p class="text-sm text-neko-500 mb-4">
+        Manage email aliases in Mailcow ~nya
     </p>
     <form hx-post="/email/mailcow/aliases" hx-target="#aliases-table" hx-swap="innerHTML" class="flex space-x-2 mb-4">
         <input type="email" name="address" required placeholder="alias@example.com"
-               class="rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm border px-3 py-2">
+               class="neko-input">
         <input type="text" name="goto" required placeholder="destination@example.com"
-               class="rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm border px-3 py-2">
-        <button type="submit"
-                class="bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2">
+               class="neko-input">
+        <button type="submit" class="neko-btn-success px-4 py-2">
             Add Alias
         </button>
         <button type="button" hx-get="/email/mailcow/aliases"
                 hx-target="#aliases-table"
                 hx-swap="innerHTML"
-                class="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2">
+                class="neko-btn-primary px-4 py-2">
             Refresh
         </button>
     </form>
 
-    <table class="min-w-full divide-y divide-gray-200">
-        <thead class="bg-gray-50">
-            <tr>
-                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Alias</th>
-                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Destination</th>
-                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
-                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
-            </tr>
-        </thead>
-        <tbody id="aliases-table" class="bg-white divide-y divide-gray-200">
-            {% include "partials/email_mailcow_aliases.html" %}
-        </tbody>
-    </table>
+    <div class="neko-scroll">
+        <table class="min-w-full neko-table">
+            <thead class="sticky top-0 z-10">
+                <tr>
+                    <th class="text-left">Alias</th>
+                    <th class="text-left">Destination</th>
+                    <th class="text-left">Status</th>
+                    <th class="text-left">Actions</th>
+                </tr>
+            </thead>
+            <tbody id="aliases-table">
+                {% include "partials/email_mailcow_aliases.html" %}
+            </tbody>
+        </table>
+    </div>
 </div>
 
 <!-- Email Blocklist Section -->
-<div class="bg-white shadow rounded-lg p-6">
-    <h2 class="text-lg font-semibold text-gray-900 mb-4">Email Blocklist</h2>
-    <p class="text-sm text-gray-500 mb-4">
-        Block emails from specific addresses, domains, or IP addresses.
+<div class="neko-card p-6">
+    <h2 class="text-lg neko-subheader mb-4">Email Blocklist</h2>
+    <p class="text-sm text-neko-500 mb-4">
+        Block emails from specific addresses, domains, or IP addresses ~nya
     </p>
     <form hx-post="/email/blocklist" hx-target="#blocklist-table" hx-swap="innerHTML" class="space-y-4 mb-4">
         <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div>
-                <label class="block text-sm font-medium text-gray-700">Type</label>
-                <select name="block_type"
-                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm border px-3 py-2">
+                <label class="neko-label">Type</label>
+                <select name="block_type" class="neko-input w-full">
                     <option value="address">Email Address</option>
                     <option value="domain">Domain</option>
                     <option value="ip">IP Address</option>
@@ -377,38 +374,39 @@
                 </select>
             </div>
             <div>
-                <label class="block text-sm font-medium text-gray-700">Value</label>
+                <label class="neko-label">Value</label>
                 <input type="text" name="value" required placeholder="spam@example.com or example.com"
-                       class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm border px-3 py-2">
+                       class="neko-input w-full">
             </div>
             <div>
-                <label class="block text-sm font-medium text-gray-700">Reason (optional)</label>
-                <input type="text" name="reason" placeholder="Spam sender"
-                       class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm border px-3 py-2">
+                <label class="neko-label">Reason (optional)</label>
+                <input type="text" name="reason" placeholder="Spam sender ~nya"
+                       class="neko-input w-full">
             </div>
             <div class="flex items-end">
-                <button type="submit"
-                        class="w-full bg-red-600 text-white px-4 py-2 rounded-md hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2">
+                <button type="submit" class="neko-btn-danger w-full px-4 py-2">
                     Add to Blocklist
                 </button>
             </div>
         </div>
     </form>
 
-    <table class="min-w-full divide-y divide-gray-200">
-        <thead class="bg-gray-50">
-            <tr>
-                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Type</th>
-                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Value</th>
-                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Reason</th>
-                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Added</th>
-                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
-            </tr>
-        </thead>
-        <tbody id="blocklist-table" class="bg-white divide-y divide-gray-200">
-            {% include "partials/email_blocklist_table.html" %}
-        </tbody>
-    </table>
+    <div class="neko-scroll">
+        <table class="min-w-full neko-table">
+            <thead class="sticky top-0 z-10">
+                <tr>
+                    <th class="text-left">Type</th>
+                    <th class="text-left">Value</th>
+                    <th class="text-left">Reason</th>
+                    <th class="text-left">Added</th>
+                    <th class="text-left">Actions</th>
+                </tr>
+            </thead>
+            <tbody id="blocklist-table">
+                {% include "partials/email_blocklist_table.html" %}
+            </tbody>
+        </table>
+    </div>
 </div>
 
 <script>

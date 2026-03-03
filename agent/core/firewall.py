@@ -3,7 +3,7 @@
 import asyncio
 import logging
 import subprocess
-from typing import List, Dict, Set, Optional
+from typing import List, Dict, Set, Optional, Tuple
 from dataclasses import dataclass
 
 from shared.models import FirewallRuleResponse
@@ -11,8 +11,26 @@ from shared.models.common import FirewallAction, Protocol
 
 logger = logging.getLogger(__name__)
 
-# Chain name for NekoProxy rules
+# Chain names for NekoProxy
 CHAIN_NAME = "NEKOPROXY"
+BLOCKLIST_CHAIN_NAME = "NEKOPROXY_BLOCKLIST"
+PUBLIC_BASELINE_CHAIN = "NEKOPROXY_PUBLIC"
+WG_BASELINE_CHAIN = "NEKOPROXY_WG"
+
+# Ports we never allow on the public interface (even if added as a proxy service)
+# Prevents accidental exposure of SSH, RDP, DBs, etc. Use WireGuard for management.
+DANGEROUS_PORTS_ON_PUBLIC = frozenset({
+    22,     # SSH
+    23,     # Telnet
+    3389,   # RDP
+    5900,   # VNC
+    5432,   # PostgreSQL
+    27017,  # MongoDB
+    6379,   # Redis
+    11211,  # Memcached
+    3306,   # MySQL
+    1433,   # MSSQL
+})
 
 
 @dataclass
@@ -40,8 +58,11 @@ class FirewallManager:
 
     def __init__(self):
         self._current_rules: Set[FirewallRuleKey] = set()
+        self._blocklist_ips: Set[str] = set()  # IPs in blocklist chain (drop by source)
         self._initialized = False
         self._interface_map: Dict[str, str] = {}  # Cache for interface mappings
+        self._baseline_jumps_added = False  # Whether INPUT jump rules for PUBLIC/WG are in place
+        self._last_baseline_ports: Set[Tuple[int, str]] = set()  # (port, "tcp"|"udp") for PUBLIC chain
 
     async def initialize(self):
         """Initialize the firewall chain."""
@@ -97,22 +118,23 @@ class FirewallManager:
             return False
 
     async def _ensure_chain_exists(self):
-        """Ensure our custom chain exists and is linked to INPUT."""
-        # Create chain (ignore if exists)
+        """Ensure our custom chains exist. Order: INPUT -> NEKOPROXY_BLOCKLIST (drop by IP) -> NEKOPROXY (port rules)."""
+        # Create blocklist chain first (drop by source IP)
+        await self._run_iptables("-N", BLOCKLIST_CHAIN_NAME)
+        # Create main chain
         await self._run_iptables("-N", CHAIN_NAME)
 
-        # Check if jump rule exists in INPUT
-        proc = await asyncio.create_subprocess_exec(
-            "iptables", "-C", "INPUT", "-j", CHAIN_NAME,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE
-        )
-        await proc.communicate()
-
-        if proc.returncode != 0:
-            # Add jump rule
-            await self._run_iptables("-I", "INPUT", "-j", CHAIN_NAME)
-            logger.info(f"Added {CHAIN_NAME} chain to INPUT")
+        # Insert in reverse order so NEKOPROXY_BLOCKLIST is checked first
+        for chain in (CHAIN_NAME, BLOCKLIST_CHAIN_NAME):
+            proc = await asyncio.create_subprocess_exec(
+                "iptables", "-C", "INPUT", "-j", chain,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+            await proc.communicate()
+            if proc.returncode != 0:
+                await self._run_iptables("-I", "INPUT", "-j", chain)
+                logger.info(f"Added {chain} chain to INPUT")
 
     async def _get_interface_for_type(self, interface_type: str) -> Optional[str]:
         """Get the actual interface name for a type like 'public' or 'wireguard'."""
@@ -129,7 +151,14 @@ class FirewallManager:
             return None
 
         elif interface_type == "public":
-            # Try to find the default interface (the one with the default route)
+            # Public = interface facing the internet. Prefer default route, but if that's
+            # WireGuard (e.g. VPN-as-gateway) use a physical interface instead.
+            wg_iface = self._interface_map.get("wireguard")
+            if not wg_iface:
+                for name in ["wg0", "wg1", "wg-tunnel"]:
+                    if await self._interface_exists(name):
+                        wg_iface = name
+                        break
             try:
                 proc = await asyncio.create_subprocess_exec(
                     "ip", "route", "show", "default",
@@ -138,20 +167,20 @@ class FirewallManager:
                 )
                 stdout, _ = await proc.communicate()
                 output = stdout.decode()
-                # Parse "default via X.X.X.X dev ethX" format
                 parts = output.split()
                 if "dev" in parts:
                     idx = parts.index("dev")
                     if idx + 1 < len(parts):
                         iface = parts[idx + 1]
-                        self._interface_map[interface_type] = iface
-                        return iface
+                        if iface != wg_iface:
+                            self._interface_map[interface_type] = iface
+                            return iface
             except Exception as e:
                 logger.error(f"Error finding default interface: {e}")
 
-            # Fallback to common interface names
+            # Fallback: first physical interface that exists and is not WireGuard
             for iface in ["eth0", "ens3", "ens192", "enp0s3", "eno1"]:
-                if await self._interface_exists(iface):
+                if iface != wg_iface and await self._interface_exists(iface):
                     self._interface_map[interface_type] = iface
                     return iface
             return None
@@ -263,24 +292,127 @@ class FirewallManager:
 
         logger.info(f"Firewall rules synced: {len(self._current_rules)} active rules")
 
-    async def clear_all_rules(self):
-        """Remove all NekoProxy firewall rules."""
+    async def sync_blocklist_ips(self, ips: List[str]):
+        """Sync iptables blocklist chain to drop traffic from these IPs (aggressive firewall)."""
+        if not self._initialized:
+            await self.initialize()
+        if not self._initialized:
+            return
+        desired = set(ips)
+        to_add = desired - self._blocklist_ips
+        to_remove = self._blocklist_ips - desired
+        for ip in to_remove:
+            await self._run_iptables("-D", BLOCKLIST_CHAIN_NAME, "-s", ip, "-j", "DROP")
+            self._blocklist_ips.discard(ip)
+        for ip in to_add:
+            if await self._run_iptables("-A", BLOCKLIST_CHAIN_NAME, "-s", ip, "-j", "DROP"):
+                self._blocklist_ips.add(ip)
+                logger.info(f"Blocklist DROP rule added for {ip}")
+        if to_add or to_remove:
+            logger.info(f"Blocklist chain: {len(self._blocklist_ips)} IPs")
+
+    async def add_blocklist_ip(self, ip: str) -> bool:
+        """Add a single IP to the blocklist chain (e.g. after auto-block from alert)."""
+        if not self._initialized:
+            await self.initialize()
+        if not self._initialized or ip in self._blocklist_ips:
+            return ip in self._blocklist_ips
+        if await self._run_iptables("-A", BLOCKLIST_CHAIN_NAME, "-s", ip, "-j", "DROP"):
+            self._blocklist_ips.add(ip)
+            logger.info(f"Blocklist DROP added for {ip}")
+            return True
+        return False
+
+    async def apply_baseline(
+        self,
+        allowed_ports: List[Tuple[int, str]],
+        harden_public: bool = True,
+        allow_wg: bool = True,
+    ):
+        """Apply auto-generated baseline: default-deny on public (only allowed_ports + established),
+        allow WireGuard interface. Reduces SSH/scan noise and locks down public while keeping WG free.
+        """
+        if not self._initialized:
+            await self.initialize()
         if not self._initialized:
             return
 
-        # Flush our chain
+        public_iface = await self._get_interface_for_type("public")
+        wg_iface = await self._get_interface_for_type("wireguard")
+
+        # Create baseline chains if needed
+        await self._run_iptables("-N", PUBLIC_BASELINE_CHAIN)
+        await self._run_iptables("-N", WG_BASELINE_CHAIN)
+
+        # Add jump rules once (after BLOCKLIST and NEKOPROXY, so at position 3 and 4)
+        if not self._baseline_jumps_added:
+            pos = 3
+            if public_iface and harden_public:
+                await self._run_iptables("-I", "INPUT", str(pos), "-i", public_iface, "-j", PUBLIC_BASELINE_CHAIN)
+                pos = 4
+            if wg_iface and allow_wg:
+                await self._run_iptables("-I", "INPUT", str(pos), "-i", wg_iface, "-j", WG_BASELINE_CHAIN)
+            self._baseline_jumps_added = True
+
+        # Helper: accept ESTABLISHED,RELATED (conntrack preferred, fallback to state for older kernels)
+        async def add_accept_established(chain: str) -> bool:
+            if await self._run_iptables("-A", chain, "-m", "conntrack", "--ctstate", "ESTABLISHED,RELATED", "-j", "ACCEPT"):
+                return True
+            return await self._run_iptables("-A", chain, "-m", "state", "--state", "ESTABLISHED,RELATED", "-j", "ACCEPT")
+
+        # PUBLIC chain: on public interface, only allow proxy ports + established/related
+        await self._run_iptables("-F", PUBLIC_BASELINE_CHAIN)
+        if public_iface and harden_public:
+            await add_accept_established(PUBLIC_BASELINE_CHAIN)
+            safe_ports = [(p, proto) for p, proto in allowed_ports if p not in DANGEROUS_PORTS_ON_PUBLIC]
+            for port, proto in safe_ports:
+                await self._run_iptables("-A", PUBLIC_BASELINE_CHAIN, "-p", proto, "--dport", str(port), "-j", "ACCEPT")
+            await self._run_iptables("-A", PUBLIC_BASELINE_CHAIN, "-j", "DROP")
+            skipped = len(allowed_ports) - len(safe_ports)
+            if skipped:
+                logger.info(f"Public baseline: excluded {skipped} dangerous port(s) from public allow list")
+            logger.info(f"Public baseline: {public_iface} default-deny, allow {len(safe_ports)} ports (SSH/DBs never on public)")
+
+        # WG chain: allow WireGuard interface (controller, SSH over WG, etc.)
+        await self._run_iptables("-F", WG_BASELINE_CHAIN)
+        if wg_iface and allow_wg:
+            await add_accept_established(WG_BASELINE_CHAIN)
+            await self._run_iptables("-A", WG_BASELINE_CHAIN, "-j", "ACCEPT")
+            logger.info(f"WireGuard baseline: {wg_iface} allow")
+
+    async def clear_all_rules(self):
+        """Remove all NekoProxy firewall rules and blocklist chain."""
+        if not self._initialized:
+            return
+
+        await self._run_iptables("-F", BLOCKLIST_CHAIN_NAME)
+        self._blocklist_ips.clear()
         await self._run_iptables("-F", CHAIN_NAME)
         self._current_rules.clear()
+        if self._baseline_jumps_added:
+            for chain in (PUBLIC_BASELINE_CHAIN, WG_BASELINE_CHAIN):
+                await self._run_iptables("-F", chain)
+            self._baseline_jumps_added = False
         logger.info("Cleared all firewall rules")
 
     async def shutdown(self):
         """Clean up firewall rules on shutdown."""
         await self.clear_all_rules()
 
-        # Remove jump rule from INPUT
-        await self._run_iptables("-D", "INPUT", "-j", CHAIN_NAME)
+        # Remove baseline jump rules (we inserted with -i iface -j CHAIN, so -D must match)
+        if self._baseline_jumps_added:
+            public_iface = await self._get_interface_for_type("public")
+            wg_iface = await self._get_interface_for_type("wireguard")
+            if public_iface:
+                await self._run_iptables("-D", "INPUT", "-i", public_iface, "-j", PUBLIC_BASELINE_CHAIN)
+            if wg_iface:
+                await self._run_iptables("-D", "INPUT", "-i", wg_iface, "-j", WG_BASELINE_CHAIN)
+            self._baseline_jumps_added = False
 
-        # Delete our chain
-        await self._run_iptables("-X", CHAIN_NAME)
+        for chain in (BLOCKLIST_CHAIN_NAME, CHAIN_NAME):
+            await self._run_iptables("-D", "INPUT", "-j", chain)
+            await self._run_iptables("-X", chain)
+        for chain in (PUBLIC_BASELINE_CHAIN, WG_BASELINE_CHAIN):
+            await self._run_iptables("-X", chain)
 
         logger.info("Firewall manager shutdown complete")

@@ -14,6 +14,7 @@ class AgentRegistration(BaseModel):
     wireguard_ip: str
     public_ip: Optional[str] = None
     version: str = "2.0.0"
+    agent_secret: Optional[str] = None  # Required if controller has NEKO_AGENT_SECRET set
 
 
 class AgentHeartbeat(BaseModel):
@@ -34,6 +35,11 @@ class AgentConfig(BaseModel):
     firewall_rules: List[FirewallRuleResponse] = Field(default_factory=list)  # Firewall rules for this agent
     email_config: Optional[AgentEmailConfig] = None  # Email proxy configuration
     heartbeat_interval: int = 30
+    # Geo filtering: "off" | "allowlist" | "blocklist"; countries = ISO 3166-1 alpha-2 (e.g. US, CA)
+    geo_mode: str = "off"
+    geo_countries: List[str] = Field(default_factory=list)
+    # Idle connection timeout (seconds); 0 = disabled
+    idle_connection_timeout_seconds: int = 0
 
 
 class AgentStatus(BaseModel):

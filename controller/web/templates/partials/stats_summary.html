@@ -1,14 +1,14 @@
-<div class="bg-white shadow rounded-lg p-6">
-    <div class="text-sm font-medium text-gray-500">Connections (24h)</div>
-    <div class="mt-2 text-3xl font-semibold text-gray-900">{{ stats.total_connections }}</div>
+<div class="neko-stat-card bg-gradient-to-br from-neko-50 to-paw-50 border border-neko-200">
+    <div class="text-sm font-semibold text-neko-600">Connections (24h)</div>
+    <div class="mt-2 text-3xl font-extrabold text-neko-900">{{ stats.total_connections }}</div>
 </div>
-<div class="bg-white shadow rounded-lg p-6">
-    <div class="text-sm font-medium text-gray-500">Blocked (24h)</div>
-    <div class="mt-2 text-3xl font-semibold text-red-600">{{ stats.blocked_connections }}</div>
+<div class="neko-stat-card bg-gradient-to-br from-red-50 to-red-100 border border-red-200">
+    <div class="text-sm font-semibold text-red-500">Auto blocked (24h)</div>
+    <div class="mt-2 text-3xl font-extrabold text-red-600">{{ stats.blocked_connections }}</div>
 </div>
-<div class="bg-white shadow rounded-lg p-6">
-    <div class="text-sm font-medium text-gray-500">Data Sent (24h)</div>
-    <div class="mt-2 text-3xl font-semibold text-gray-900">
+<div class="neko-stat-card bg-gradient-to-br from-paw-50 to-paw-100 border border-paw-200">
+    <div class="text-sm font-semibold text-paw-500">Data Sent (24h)</div>
+    <div class="mt-2 text-3xl font-extrabold text-paw-600">
         {% set bytes = stats.total_bytes_sent %}
         {% if bytes >= 1073741824 %}
         {{ "%.1f"|format(bytes / 1073741824) }} GB
@@ -21,9 +21,9 @@
         {% endif %}
     </div>
 </div>
-<div class="bg-white shadow rounded-lg p-6">
-    <div class="text-sm font-medium text-gray-500">Data Received (24h)</div>
-    <div class="mt-2 text-3xl font-semibold text-gray-900">
+<div class="neko-stat-card bg-gradient-to-br from-neko-50 to-neko-100 border border-neko-200">
+    <div class="text-sm font-semibold text-neko-500">Data Received (24h)</div>
+    <div class="mt-2 text-3xl font-extrabold text-neko-700">
         {% set bytes = stats.total_bytes_received %}
         {% if bytes >= 1073741824 %}
         {{ "%.1f"|format(bytes / 1073741824) }} GB

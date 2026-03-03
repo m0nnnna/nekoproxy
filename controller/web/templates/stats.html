@@ -4,23 +4,23 @@
 
 {% block content %}
 <div class="flex justify-between items-center mb-6">
-    <h1 class="text-2xl font-bold text-gray-900">Statistics</h1>
+    <h1 class="text-2xl neko-header">Statistics</h1>
     <!-- Time Range Selector -->
     <div class="flex space-x-2">
         <a href="/stats?period=24h"
-           class="px-3 py-1 text-sm font-medium rounded-md {{ 'bg-indigo-600 text-white' if current_period == '24h' else 'bg-gray-200 text-gray-700 hover:bg-gray-300' }}">
+           class="neko-time-btn {{ 'neko-time-active' if current_period == '24h' else 'neko-time-inactive' }}">
             24h
         </a>
         <a href="/stats?period=7d"
-           class="px-3 py-1 text-sm font-medium rounded-md {{ 'bg-indigo-600 text-white' if current_period == '7d' else 'bg-gray-200 text-gray-700 hover:bg-gray-300' }}">
+           class="neko-time-btn {{ 'neko-time-active' if current_period == '7d' else 'neko-time-inactive' }}">
             7d
         </a>
         <a href="/stats?period=30d"
-           class="px-3 py-1 text-sm font-medium rounded-md {{ 'bg-indigo-600 text-white' if current_period == '30d' else 'bg-gray-200 text-gray-700 hover:bg-gray-300' }}">
+           class="neko-time-btn {{ 'neko-time-active' if current_period == '30d' else 'neko-time-inactive' }}">
             30d
         </a>
         <a href="/stats?period=lifetime"
-           class="px-3 py-1 text-sm font-medium rounded-md {{ 'bg-indigo-600 text-white' if current_period == 'lifetime' else 'bg-gray-200 text-gray-700 hover:bg-gray-300' }}">
+           class="neko-time-btn {{ 'neko-time-active' if current_period == 'lifetime' else 'neko-time-inactive' }}">
             Lifetime
         </a>
     </div>
@@ -28,19 +28,19 @@
 
 <!-- Proxy Connection Stats -->
 {% set period_label = {'24h': '24h', '7d': '7 days', '30d': '30 days', 'lifetime': 'Lifetime'}[current_period] %}
-<h2 class="text-lg font-semibold text-gray-900 mb-4">Proxy Connections ({{ period_label }})</h2>
+<h2 class="text-lg neko-subheader mb-4">Proxy Connections ({{ period_label }})</h2>
 <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
-    <div class="bg-white shadow rounded-lg p-6">
-        <div class="text-sm font-medium text-gray-500">Total Connections</div>
-        <div class="mt-2 text-3xl font-semibold text-gray-900">{{ summary.total_connections }}</div>
+    <div class="neko-stat-card bg-gradient-to-br from-neko-50 to-paw-50 border border-neko-200">
+        <div class="text-sm font-semibold text-neko-600">Total Connections</div>
+        <div class="mt-2 text-3xl font-extrabold text-neko-900">{{ summary.total_connections }}</div>
     </div>
-    <div class="bg-white shadow rounded-lg p-6">
-        <div class="text-sm font-medium text-gray-500">Blocked Connections</div>
-        <div class="mt-2 text-3xl font-semibold text-red-600">{{ summary.blocked_connections }}</div>
+    <div class="neko-stat-card bg-gradient-to-br from-red-50 to-red-100 border border-red-200">
+        <div class="text-sm font-semibold text-red-500">Auto blocked</div>
+        <div class="mt-2 text-3xl font-extrabold text-red-600">{{ summary.blocked_connections }}</div>
     </div>
-    <div class="bg-white shadow rounded-lg p-6">
-        <div class="text-sm font-medium text-gray-500">Data Sent</div>
-        <div class="mt-2 text-3xl font-semibold text-gray-900">
+    <div class="neko-stat-card bg-gradient-to-br from-paw-50 to-paw-100 border border-paw-200">
+        <div class="text-sm font-semibold text-paw-500">Data Sent</div>
+        <div class="mt-2 text-3xl font-extrabold text-paw-600">
             {% set bytes = summary.total_bytes_sent %}
             {% if bytes >= 1073741824 %}
             {{ "%.2f"|format(bytes / 1073741824) }} GB
@@ -53,9 +53,9 @@
             {% endif %}
         </div>
     </div>
-    <div class="bg-white shadow rounded-lg p-6">
-        <div class="text-sm font-medium text-gray-500">Data Received</div>
-        <div class="mt-2 text-3xl font-semibold text-gray-900">
+    <div class="neko-stat-card bg-gradient-to-br from-neko-50 to-neko-100 border border-neko-200">
+        <div class="text-sm font-semibold text-neko-500">Data Received</div>
+        <div class="mt-2 text-3xl font-extrabold text-neko-700">
             {% set bytes = summary.total_bytes_received %}
             {% if bytes >= 1073741824 %}
             {{ "%.2f"|format(bytes / 1073741824) }} GB
@@ -71,23 +71,23 @@
 </div>
 
 <!-- Email Proxy Stats -->
-<h2 class="text-lg font-semibold text-gray-900 mb-4">Email Proxy ({{ period_label }})</h2>
+<h2 class="text-lg neko-subheader mb-4">Email Proxy ({{ period_label }})</h2>
 <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
-    <div class="bg-white shadow rounded-lg p-6">
-        <div class="text-sm font-medium text-gray-500">Emails Processed</div>
-        <div class="mt-2 text-3xl font-semibold text-gray-900">{{ email_summary.total_emails }}</div>
+    <div class="neko-stat-card bg-gradient-to-br from-neko-50 to-paw-50 border border-neko-200">
+        <div class="text-sm font-semibold text-neko-600">Emails Processed</div>
+        <div class="mt-2 text-3xl font-extrabold text-neko-900">{{ email_summary.total_emails }}</div>
     </div>
-    <div class="bg-white shadow rounded-lg p-6">
-        <div class="text-sm font-medium text-gray-500">Delivered</div>
-        <div class="mt-2 text-3xl font-semibold text-green-600">{{ email_summary.delivered_emails }}</div>
+    <div class="neko-stat-card bg-gradient-to-br from-green-50 to-green-100 border border-green-200">
+        <div class="text-sm font-semibold text-green-500">Delivered</div>
+        <div class="mt-2 text-3xl font-extrabold text-green-600">{{ email_summary.delivered_emails }}</div>
     </div>
-    <div class="bg-white shadow rounded-lg p-6">
-        <div class="text-sm font-medium text-gray-500">Blocked</div>
-        <div class="mt-2 text-3xl font-semibold text-red-600">{{ email_summary.blocked_emails }}</div>
+    <div class="neko-stat-card bg-gradient-to-br from-red-50 to-red-100 border border-red-200">
+        <div class="text-sm font-semibold text-red-500">Blocked</div>
+        <div class="mt-2 text-3xl font-extrabold text-red-600">{{ email_summary.blocked_emails }}</div>
     </div>
-    <div class="bg-white shadow rounded-lg p-6">
-        <div class="text-sm font-medium text-gray-500">Email Data Sent</div>
-        <div class="mt-2 text-3xl font-semibold text-gray-900">
+    <div class="neko-stat-card bg-gradient-to-br from-paw-50 to-paw-100 border border-paw-200">
+        <div class="text-sm font-semibold text-paw-500">Email Data Sent</div>
+        <div class="mt-2 text-3xl font-extrabold text-paw-600">
             {% set bytes = email_summary.email_bytes_sent %}
             {% if bytes >= 1073741824 %}
             {{ "%.2f"|format(bytes / 1073741824) }} GB
@@ -102,65 +102,95 @@
     </div>
 </div>
 
-<!-- Connection Log -->
-<div class="bg-white shadow rounded-lg overflow-hidden mb-8">
-    <div class="px-6 py-4 border-b border-gray-200">
-        <h2 class="text-lg font-semibold text-gray-900">Connection Log ({{ period_label }})</h2>
+<!-- Firewall / iptables Stats -->
+<h2 class="text-lg neko-subheader mb-4">Firewall / iptables ({{ period_label }})</h2>
+<div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
+    <div class="neko-stat-card bg-gradient-to-br from-neko-50 to-paw-50 border border-neko-200">
+        <div class="text-sm font-semibold text-neko-600">Total Packets</div>
+        <div class="mt-2 text-3xl font-extrabold text-neko-900">{{ firewall_summary.total_firewall_packets }}</div>
     </div>
-    <div class="overflow-x-auto">
-        <table class="min-w-full divide-y divide-gray-200">
-            <thead class="bg-gray-50">
+    <div class="neko-stat-card bg-gradient-to-br from-red-50 to-red-100 border border-red-200">
+        <div class="text-sm font-semibold text-red-500">Blocked Packets</div>
+        <div class="mt-2 text-3xl font-extrabold text-red-600">{{ firewall_summary.blocked_packets }}</div>
+    </div>
+    <div class="neko-stat-card bg-gradient-to-br from-green-50 to-green-100 border border-green-200">
+        <div class="text-sm font-semibold text-green-500">Allowed Packets</div>
+        <div class="mt-2 text-3xl font-extrabold text-green-600">{{ firewall_summary.allowed_packets }}</div>
+    </div>
+    <div class="neko-stat-card bg-gradient-to-br from-paw-50 to-paw-100 border border-paw-200">
+        <div class="text-sm font-semibold text-paw-500">Firewall Data</div>
+        <div class="mt-2 text-3xl font-extrabold text-paw-600">
+            {% set bytes = firewall_summary.total_firewall_bytes %}
+            {% if bytes >= 1073741824 %}
+            {{ "%.2f"|format(bytes / 1073741824) }} GB
+            {% elif bytes >= 1048576 %}
+            {{ "%.2f"|format(bytes / 1048576) }} MB
+            {% elif bytes >= 1024 %}
+            {{ "%.2f"|format(bytes / 1024) }} KB
+            {% else %}
+            {{ bytes }} B
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<!-- Connection Log -->
+<div class="neko-table-container mb-8">
+    <div class="px-6 py-4 border-b-2 border-neko-200">
+        <h2 class="text-lg neko-subheader">Connection Log ({{ period_label }})</h2>
+    </div>
+    <div class="neko-scroll">
+        <table class="min-w-full neko-table">
+            <thead class="sticky top-0 z-10">
                 <tr>
-                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Time</th>
-                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Agent</th>
-                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Client IP</th>
-                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
-                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Duration</th>
-                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Sent</th>
-                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Received</th>
+                    <th class="text-left">Time</th>
+                    <th class="text-left">Agent</th>
+                    <th class="text-left">Service / Rule</th>
+                    <th class="text-left">Client IP</th>
+                    <th class="text-left">Status</th>
+                    <th class="text-left">Duration</th>
+                    <th class="text-left">Sent</th>
+                    <th class="text-left">Received</th>
                 </tr>
             </thead>
-            <tbody class="bg-white divide-y divide-gray-200">
+            <tbody>
                 {% for conn in connections %}
                 <tr>
-                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    <td class="whitespace-nowrap text-sm text-neko-400">
                         {{ conn.timestamp.strftime('%Y-%m-%d %H:%M:%S') }}
                     </td>
-                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {{ conn.agent_id }}
+                    <td class="whitespace-nowrap text-sm text-neko-500">
+                        {{ conn.agent.hostname if conn.agent else conn.agent_id }}
                     </td>
-                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                    <td class="whitespace-nowrap text-sm text-neko-700 font-medium">
+                        {{ conn.service.name if conn.service else ('(blocked/other)' if conn.status == 'blocked' else '-') }}
+                    </td>
+                    <td class="whitespace-nowrap text-sm text-neko-900 font-medium">
                         {{ conn.client_ip }}
                     </td>
-                    <td class="px-6 py-4 whitespace-nowrap">
+                    <td class="whitespace-nowrap">
                         {% if conn.status == 'completed' %}
-                        <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">
-                            {{ conn.status }}
-                        </span>
+                        <span class="neko-badge neko-badge-healthy">{{ conn.status }}</span>
                         {% elif conn.status == 'blocked' %}
-                        <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-red-100 text-red-800">
-                            {{ conn.status }}
-                        </span>
+                        <span class="neko-badge neko-badge-blocked">{{ conn.status }}</span>
                         {% else %}
-                        <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-yellow-100 text-yellow-800">
-                            {{ conn.status }}
-                        </span>
+                        <span class="neko-badge neko-badge-medium">{{ conn.status }}</span>
                         {% endif %}
                     </td>
-                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    <td class="whitespace-nowrap text-sm text-neko-500">
                         {{ "%.2f"|format(conn.duration or 0) }}s
                     </td>
-                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    <td class="whitespace-nowrap text-sm text-neko-500">
                         {{ conn.bytes_sent }} B
                     </td>
-                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    <td class="whitespace-nowrap text-sm text-neko-500">
                         {{ conn.bytes_received }} B
                     </td>
                 </tr>
                 {% else %}
                 <tr>
-                    <td colspan="7" class="px-6 py-4 text-center text-sm text-gray-500">
-                        No connections in this period
+                    <td colspan="8" class="text-center py-8 neko-empty">
+                        No connections in this period (=^.^=)
                     </td>
                 </tr>
                 {% endfor %}
@@ -170,65 +200,55 @@
 </div>
 
 <!-- Email Log -->
-<div class="bg-white shadow rounded-lg overflow-hidden">
-    <div class="px-6 py-4 border-b border-gray-200">
-        <h2 class="text-lg font-semibold text-gray-900">Email Log ({{ period_label }})</h2>
+<div class="neko-table-container">
+    <div class="px-6 py-4 border-b-2 border-neko-200">
+        <h2 class="text-lg neko-subheader">Email Log ({{ period_label }})</h2>
     </div>
-    <div class="overflow-x-auto">
-        <table class="min-w-full divide-y divide-gray-200">
-            <thead class="bg-gray-50">
+    <div class="neko-scroll">
+        <table class="min-w-full neko-table">
+            <thead class="sticky top-0 z-10">
                 <tr>
-                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Time</th>
-                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Agent</th>
-                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Client IP</th>
-                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Sender</th>
-                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Recipient</th>
-                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
-                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Size</th>
+                    <th class="text-left">Time</th>
+                    <th class="text-left">Agent</th>
+                    <th class="text-left">Client IP</th>
+                    <th class="text-left">Sender</th>
+                    <th class="text-left">Recipient</th>
+                    <th class="text-left">Status</th>
+                    <th class="text-left">Size</th>
                 </tr>
             </thead>
-            <tbody class="bg-white divide-y divide-gray-200">
+            <tbody>
                 {% for email in email_connections %}
                 <tr>
-                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    <td class="whitespace-nowrap text-sm text-neko-400">
                         {{ email.timestamp.strftime('%Y-%m-%d %H:%M:%S') }}
                     </td>
-                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {{ email.agent_id }}
+                    <td class="whitespace-nowrap text-sm text-neko-500">
+                        {{ email.agent.hostname if email.agent else email.agent_id }}
                     </td>
-                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                    <td class="whitespace-nowrap text-sm text-neko-900 font-medium">
                         {{ email.client_ip }}
                     </td>
-                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    <td class="whitespace-nowrap text-sm text-neko-500">
                         {{ email.sender or '-' }}
                     </td>
-                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    <td class="whitespace-nowrap text-sm text-neko-500">
                         {{ email.recipient or '-' }}
                     </td>
-                    <td class="px-6 py-4 whitespace-nowrap">
+                    <td class="whitespace-nowrap">
                         {% if email.status == 'delivered' %}
-                        <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">
-                            {{ email.status }}
-                        </span>
+                        <span class="neko-badge neko-badge-healthy">{{ email.status }}</span>
                         {% elif email.status == 'blocked' %}
-                        <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-red-100 text-red-800">
-                            {{ email.status }}
-                        </span>
+                        <span class="neko-badge neko-badge-blocked">{{ email.status }}</span>
                         {% elif email.status == 'bounced' %}
-                        <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-red-100 text-red-800">
-                            {{ email.status }}
-                        </span>
+                        <span class="neko-badge neko-badge-critical">{{ email.status }}</span>
                         {% elif email.status == 'deferred' %}
-                        <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-yellow-100 text-yellow-800">
-                            {{ email.status }}
-                        </span>
+                        <span class="neko-badge neko-badge-medium">{{ email.status }}</span>
                         {% else %}
-                        <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-gray-100 text-gray-800">
-                            {{ email.status }}
-                        </span>
+                        <span class="neko-badge neko-badge-low">{{ email.status }}</span>
                         {% endif %}
                     </td>
-                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    <td class="whitespace-nowrap text-sm text-neko-500">
                         {% set bytes = email.bytes_sent + email.bytes_received %}
                         {% if bytes >= 1048576 %}
                         {{ "%.2f"|format(bytes / 1048576) }} MB
@@ -241,8 +261,79 @@
                 </tr>
                 {% else %}
                 <tr>
-                    <td colspan="7" class="px-6 py-4 text-center text-sm text-gray-500">
-                        No email activity in this period
+                    <td colspan="7" class="text-center py-8 neko-empty">
+                        No email activity in this period (=^.^=)
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Firewall Log -->
+<div class="neko-table-container">
+    <div class="px-6 py-4 border-b-2 border-neko-200">
+        <h2 class="text-lg neko-subheader">Firewall Log ({{ period_label }})</h2>
+        <p class="text-xs text-neko-500 mt-1">Traffic that matched each iptables rule on agents (packet/byte counters). Entries appear when rules in the NEKOPROXY chain see traffic; blocks by blocklist or public baseline may not show here.</p>
+    </div>
+    <div class="neko-scroll">
+        <table class="min-w-full neko-table">
+            <thead class="sticky top-0 z-10">
+                <tr>
+                    <th class="text-left">Time</th>
+                    <th class="text-left">Agent</th>
+                    <th class="text-left">Port</th>
+                    <th class="text-left">Protocol</th>
+                    <th class="text-left">Interface</th>
+                    <th class="text-left">Action</th>
+                    <th class="text-left">Packets</th>
+                    <th class="text-left">Data</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for entry in firewall_entries %}
+                <tr>
+                    <td class="whitespace-nowrap text-sm text-neko-400">
+                        {{ entry.timestamp.strftime('%Y-%m-%d %H:%M:%S') }}
+                    </td>
+                    <td class="whitespace-nowrap text-sm text-neko-500">
+                        {{ entry.agent.hostname if entry.agent else entry.agent_id }}
+                    </td>
+                    <td class="whitespace-nowrap text-sm text-neko-900 font-medium">
+                        {{ entry.port }}
+                    </td>
+                    <td class="whitespace-nowrap text-sm text-neko-500">
+                        {{ entry.protocol }}
+                    </td>
+                    <td class="whitespace-nowrap text-sm text-neko-500">
+                        {{ entry.interface }}
+                    </td>
+                    <td class="whitespace-nowrap">
+                        {% if entry.action == 'block' %}
+                        <span class="neko-badge neko-badge-blocked">DROP</span>
+                        {% else %}
+                        <span class="neko-badge neko-badge-healthy">ACCEPT</span>
+                        {% endif %}
+                    </td>
+                    <td class="whitespace-nowrap text-sm text-neko-500">
+                        {{ entry.packets }}
+                    </td>
+                    <td class="whitespace-nowrap text-sm text-neko-500">
+                        {% set bytes = entry.bytes_count %}
+                        {% if bytes >= 1048576 %}
+                        {{ "%.2f"|format(bytes / 1048576) }} MB
+                        {% elif bytes >= 1024 %}
+                        {{ "%.2f"|format(bytes / 1024) }} KB
+                        {% else %}
+                        {{ bytes }} B
+                        {% endif %}
+                    </td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="8" class="text-center py-8 neko-empty">
+                        No firewall activity in this period (=^.^=)
                     </td>
                 </tr>
                 {% endfor %}

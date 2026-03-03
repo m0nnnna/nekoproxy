@@ -3,7 +3,7 @@
 import asyncio
 import logging
 import time
-from typing import Optional, Callable, Set, Dict, List, Tuple
+from typing import Optional, Callable, Set, Dict, List, Tuple, Any
 from dataclasses import dataclass, field
 
 from agent.config import settings
@@ -41,7 +41,11 @@ class UDPProxyProtocol(asyncio.DatagramProtocol):
         service_name: str,
         blocklist: Set[str],
         on_connection: Optional[Callable],
-        client_timeout: int = 300  # 5 minutes
+        client_timeout: int = 300,  # 5 minutes; 0 = use default 300
+        rate_limiter: Optional[Any] = None,
+        geo_mode: str = "off",
+        geo_countries: Optional[Set[str]] = None,
+        geo_lookup: Optional[Any] = None,
     ):
         self.backend_host = backend_host
         self.backend_port = backend_port
@@ -49,10 +53,13 @@ class UDPProxyProtocol(asyncio.DatagramProtocol):
         self.service_name = service_name
         self.blocklist = blocklist
         self.on_connection = on_connection
-        self.client_timeout = client_timeout
+        self.client_timeout = client_timeout or 300
+        self.rate_limiter = rate_limiter
+        self.geo_mode = geo_mode or "off"
+        self.geo_countries = geo_countries or set()
+        self.geo_lookup = geo_lookup
 
         self.transport: Optional[asyncio.DatagramTransport] = None
-        # Map client address to (backend transport, stats)
         self._clients: Dict[tuple, Tuple[asyncio.DatagramTransport, UDPConnectionStats]] = {}
         self._cleanup_task: Optional[asyncio.Task] = None
 
@@ -87,8 +94,8 @@ class UDPProxyProtocol(asyncio.DatagramProtocol):
             return
 
         if addr not in self._clients:
-            # New client - create backend connection
-            asyncio.create_task(self._create_backend_connection(addr, data))
+            # New client - rate limit then create backend connection
+            asyncio.create_task(self._handle_new_client(addr, data))
         else:
             # Existing client - forward to backend
             backend_transport, stats = self._clients[addr]
@@ -96,6 +103,22 @@ class UDPProxyProtocol(asyncio.DatagramProtocol):
             stats.bytes_sent += len(data)
             stats.packets_sent += 1
             stats.last_activity = time.time()
+
+    async def _handle_new_client(self, client_addr: tuple, initial_data: bytes):
+        """Geo check, rate limit, then create backend for new client."""
+        client_ip = client_addr[0]
+        if self.geo_mode != "off" and self.geo_lookup and self.geo_countries:
+            country = self.geo_lookup.country_code(client_ip)
+            if self.geo_mode == "allowlist" and country not in self.geo_countries:
+                logger.warning(f"[{self.service_name}] GEO BLOCK (allowlist) UDP from {client_ip} (country={country or '??'})")
+                return
+            if self.geo_mode == "blocklist" and country and country in self.geo_countries:
+                logger.warning(f"[{self.service_name}] GEO BLOCK (blocklist) UDP from {client_ip} (country={country})")
+                return
+        if self.rate_limiter and not await self.rate_limiter.allow(client_ip, self.service_id):
+            logger.warning(f"[{self.service_name}] RATE LIMIT UDP from {client_ip}")
+            return
+        await self._create_backend_connection(client_addr, initial_data)
 
     async def _create_backend_connection(self, client_addr: tuple, initial_data: bytes):
         """Create a new backend connection for a client."""
@@ -203,7 +226,13 @@ class UDPProxy:
         service_id: int,
         service_name: str = "unknown",
         blocklist: Set[str] = None,
-        on_connection: Optional[Callable] = None
+        on_connection: Optional[Callable] = None,
+        rate_limiter: Optional[Any] = None,
+        listen_ip: Optional[str] = None,
+        geo_mode: str = "off",
+        geo_countries: Optional[List[str]] = None,
+        geo_lookup: Optional[Any] = None,
+        client_timeout: int = 300,
     ):
         self.listen_port = listen_port
         self.backend_host = backend_host
@@ -212,6 +241,12 @@ class UDPProxy:
         self.service_name = service_name
         self.blocklist = blocklist or set()
         self.on_connection = on_connection
+        self.rate_limiter = rate_limiter
+        self._listen_ip = listen_ip or settings.listen_ip
+        self.geo_mode = geo_mode or "off"
+        self.geo_countries = set(geo_countries or [])
+        self.geo_lookup = geo_lookup
+        self.client_timeout = client_timeout or 300
 
         self._transport: Optional[asyncio.DatagramTransport] = None
         self._protocol: Optional[UDPProxyProtocol] = None
@@ -228,6 +263,22 @@ class UDPProxy:
         if self._protocol:
             self._protocol.blocklist = blocklist
 
+    def set_geo(self, geo_mode: str, geo_countries: List[str], geo_lookup: Optional[Any] = None) -> None:
+        """Update geo filtering."""
+        self.geo_mode = geo_mode or "off"
+        self.geo_countries = set(geo_countries or [])
+        self.geo_lookup = geo_lookup
+        if self._protocol:
+            self._protocol.geo_mode = self.geo_mode
+            self._protocol.geo_countries = self.geo_countries
+            self._protocol.geo_lookup = self.geo_lookup
+
+    def set_idle_timeout(self, seconds: int) -> None:
+        """Update client/session idle timeout; 0 = keep 300s default."""
+        self.client_timeout = max(300, int(seconds)) if seconds > 0 else 300
+        if self._protocol:
+            self._protocol.client_timeout = self.client_timeout
+
     async def start(self):
         """Start the UDP proxy."""
         loop = asyncio.get_event_loop()
@@ -239,9 +290,14 @@ class UDPProxy:
                 service_id=self.service_id,
                 service_name=self.service_name,
                 blocklist=self.blocklist,
-                on_connection=self.on_connection
+                on_connection=self.on_connection,
+                rate_limiter=self.rate_limiter,
+                client_timeout=self.client_timeout,
+                geo_mode=self.geo_mode,
+                geo_countries=self.geo_countries,
+                geo_lookup=self.geo_lookup,
             ),
-            local_addr=(settings.listen_ip, self.listen_port)
+            local_addr=(self._listen_ip, self.listen_port)
         )
 
     async def stop(self):
@@ -254,10 +310,43 @@ class UDPProxy:
 class UDPProxyManager:
     """Manages multiple UDP proxy instances."""
 
-    def __init__(self, on_connection: Optional[Callable] = None):
+    def __init__(
+        self,
+        on_connection: Optional[Callable] = None,
+        rate_limiter: Optional[Any] = None,
+        listen_ip: Optional[str] = None,
+        geo_mode: str = "off",
+        geo_countries: Optional[List[str]] = None,
+        geo_lookup: Optional[Any] = None,
+        idle_timeout_seconds: int = 0,
+    ):
         self.on_connection = on_connection
-        self._proxies: Dict[int, UDPProxy] = {}  # port -> proxy
+        self.rate_limiter = rate_limiter
+        self._listen_ip = listen_ip or settings.listen_ip
+        self._geo_mode = geo_mode or "off"
+        self._geo_countries = list(geo_countries or [])
+        self._geo_lookup = geo_lookup
+        self._idle_timeout_seconds = idle_timeout_seconds or 0
+        self._proxies: Dict[int, UDPProxy] = {}
         self._blocklist: Set[str] = set()
+
+    def set_listen_ip(self, ip: str) -> None:
+        """Set listen IP for new proxies (e.g. WireGuard-only binding)."""
+        self._listen_ip = ip
+
+    def set_geo(self, geo_mode: str, geo_countries: List[str], geo_lookup: Optional[Any] = None) -> None:
+        """Set geo filtering for new and existing proxies."""
+        self._geo_mode = geo_mode or "off"
+        self._geo_countries = list(geo_countries or [])
+        self._geo_lookup = geo_lookup
+        for proxy in self._proxies.values():
+            proxy.set_geo(geo_mode, geo_countries, geo_lookup)
+
+    def set_idle_timeout(self, seconds: int) -> None:
+        """Set idle/session timeout for UDP; 0 = 300s default."""
+        self._idle_timeout_seconds = max(0, int(seconds))
+        for proxy in self._proxies.values():
+            proxy.set_idle_timeout(seconds if seconds > 0 else 300)
 
     @property
     def active_connections(self) -> int:
@@ -282,6 +371,7 @@ class UDPProxyManager:
             logger.warning(f"UDP proxy already running on port {listen_port}")
             return
 
+        client_timeout = self._idle_timeout_seconds if self._idle_timeout_seconds > 0 else 300
         proxy = UDPProxy(
             listen_port=listen_port,
             backend_host=backend_host,
@@ -289,7 +379,13 @@ class UDPProxyManager:
             service_id=service_id,
             service_name=service_name,
             blocklist=self._blocklist,
-            on_connection=self.on_connection
+            on_connection=self.on_connection,
+            rate_limiter=self.rate_limiter,
+            listen_ip=self._listen_ip,
+            geo_mode=self._geo_mode,
+            geo_countries=self._geo_countries,
+            geo_lookup=self._geo_lookup,
+            client_timeout=client_timeout,
         )
 
         await proxy.start()

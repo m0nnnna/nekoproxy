@@ -4,7 +4,7 @@ import httpx
 import asyncio
 import logging
 
-from fastapi import APIRouter, Depends, Request, Form, HTTPException
+from fastapi import APIRouter, Depends, Request, Form, HTTPException, UploadFile, File
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
@@ -23,9 +23,11 @@ from controller.database.repositories import (
     AlertRepository,
     EmailConfigRepository,
     EmailUserRepository,
-    EmailBlocklistRepository
+    EmailBlocklistRepository,
+    GlobalSettingsRepository,
 )
 from controller.core.email_manager import EmailManager
+from controller.core.agent_sync import trigger_sync_all_agents
 from shared.models.common import Protocol, FirewallAction, AlertSeverity, AlertType, EmailBlocklistType
 
 # Ensure templates directory exists
@@ -55,17 +57,89 @@ async def dashboard(request: Request, db: Session = Depends(get_db)):
     })
 
 
+AGENT_BINARY_FILENAME = "nekoproxy-agent"
+
+
+def _get_uploaded_agent_path():
+    """Path to the uploaded agent binary (if any)."""
+    d = settings.uploads_agent_dir
+    return d / AGENT_BINARY_FILENAME
+
+
 @router.get("/agents", response_class=HTMLResponse)
 async def agents_page(request: Request, db: Session = Depends(get_db)):
     """Agents management page."""
     agent_repo = AgentRepository(db)
     agents = agent_repo.get_all()
+    agent_binary_path = _get_uploaded_agent_path()
+    has_uploaded_binary = agent_binary_path.is_file()
 
     return templates.TemplateResponse("agents.html", {
         "request": request,
         "agents": agents,
+        "has_uploaded_binary": has_uploaded_binary,
         "active_page": "agents"
     })
+
+
+@router.post("/agents/upload", response_class=HTMLResponse)
+async def upload_agent_binary(
+    request: Request,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db)
+):
+    """Store uploaded agent binary for push-update."""
+    upload_dir = settings.uploads_agent_dir
+    upload_dir.mkdir(parents=True, exist_ok=True)
+    path = upload_dir / AGENT_BINARY_FILENAME
+    try:
+        content = await file.read()
+        if not content:
+            raise HTTPException(status_code=400, detail="Empty file")
+        path.write_bytes(content)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    # Redirect back to agents page so user sees updated state
+    return RedirectResponse(url="/agents", status_code=303)
+
+
+@router.post("/agents/{agent_id}/push-update", response_class=HTMLResponse)
+async def push_agent_update(
+    request: Request,
+    agent_id: int,
+    db: Session = Depends(get_db)
+):
+    """Stream the uploaded agent binary to the agent's /update-binary endpoint."""
+    import httpx
+    agent_repo = AgentRepository(db)
+    agent = agent_repo.get_by_id(agent_id)
+    if not agent:
+        raise HTTPException(status_code=404, detail="Agent not found")
+    path = _get_uploaded_agent_path()
+    if not path.is_file():
+        return HTMLResponse(
+            '<span class="text-red-500">No agent binary uploaded. Upload one above first.</span>',
+            status_code=400
+        )
+    url = f"http://{agent.wireguard_ip}:8002/update-binary"
+    try:
+        with open(path, "rb") as f:
+            body = f.read()
+        async with httpx.AsyncClient(timeout=120.0) as client:
+            r = await client.post(url, content=body)
+        if r.status_code == 200:
+            return HTMLResponse(
+                f'<span class="text-green-600">Update pushed to {agent.hostname}. Agent will restart with new binary.</span>'
+            )
+        return HTMLResponse(
+            f'<span class="text-red-500">Agent returned {r.status_code}: {r.text[:200]}</span>',
+            status_code=r.status_code
+        )
+    except Exception as e:
+        return HTMLResponse(
+            f'<span class="text-red-500">Failed: {e!s}</span>',
+            status_code=500
+        )
 
 
 @router.delete("/agents/{agent_id}", response_class=HTMLResponse)
@@ -235,6 +309,68 @@ async def toggle_assignment_htmx(request: Request, assignment_id: int, db: Sessi
     })
 
 
+@router.get("/settings", response_class=HTMLResponse)
+async def settings_page(request: Request, db: Session = Depends(get_db)):
+    """Global settings page (geo, lockdown, controller URL, apply to agents)."""
+    gs_repo = GlobalSettingsRepository(db)
+    gs = gs_repo.get()
+    agent_repo = AgentRepository(db)
+    agents = agent_repo.get_all()
+    # Merge DB settings with env for display (DB overrides)
+    settings_dict = {
+        "controller_url": (gs.controller_url if gs else None) or getattr(settings, "controller_url", None) or "",
+        "geo_mode": (gs.geo_mode if gs else None) or settings.geo_mode or "off",
+        "geo_countries": (gs.geo_countries if gs else None) or settings.geo_countries or "",
+        "idle_connection_timeout_seconds": gs.idle_connection_timeout_seconds if gs and gs.idle_connection_timeout_seconds is not None else getattr(settings, "idle_connection_timeout_seconds", 0) or 0,
+        "paranoid": gs.paranoid if gs and gs.paranoid is not None else getattr(settings, "paranoid", False),
+        "agent_secret": (gs.agent_secret if gs else None) or settings.agent_secret or "",
+    }
+    return templates.TemplateResponse("settings.html", {
+        "request": request,
+        "settings": settings_dict,
+        "agents": agents,
+        "active_page": "settings"
+    })
+
+
+@router.post("/settings/apply", response_class=HTMLResponse)
+async def apply_settings_htmx(
+    request: Request,
+    controller_url: str = Form(""),
+    geo_mode: str = Form("off"),
+    geo_countries: str = Form(""),
+    idle_connection_timeout_seconds: int = Form(0),
+    agent_secret: str = Form(""),
+    apply_to: str = Form("all"),
+    db: Session = Depends(get_db)
+):
+    """Save global settings and push config to selected agents (or all)."""
+    form = await request.form()
+    agent_ids_raw = form.getlist("agent_ids")
+    paranoid = form.get("paranoid") in ("1", "true", "on", "yes")
+
+    gs_repo = GlobalSettingsRepository(db)
+    gs_repo.update(
+        controller_url=controller_url.strip() or None,
+        geo_mode=geo_mode.strip() or None,
+        geo_countries=geo_countries.strip() or None,
+        idle_connection_timeout_seconds=idle_connection_timeout_seconds if idle_connection_timeout_seconds >= 0 else 0,
+        paranoid=paranoid,
+        agent_secret=agent_secret.strip() or None,
+    )
+    agent_id_list = None
+    if apply_to == "selected" and agent_ids_raw:
+        try:
+            agent_id_list = [int(a) for a in agent_ids_raw]
+        except (ValueError, TypeError):
+            agent_id_list = None
+    result = await trigger_sync_all_agents(db, agent_ids=agent_id_list)
+    return HTMLResponse(
+        f'<span class="text-green-600">Settings saved. Synced to {result["success"]} agent(s).'
+        + (f' {result["failed"]} failed.</span>' if result["failed"] else ".</span>")
+    )
+
+
 @router.get("/blocklist", response_class=HTMLResponse)
 async def blocklist_page(request: Request, db: Session = Depends(get_db)):
     """IP Blocklist management page."""
@@ -266,6 +402,9 @@ async def add_blocklist_htmx(
 
     repo.add(ip, reason or None)
 
+    # Auto-sync blocklist to all agents (firewall-style: push immediately)
+    await trigger_sync_all_agents(db)
+
     # Return updated blocklist
     entries = repo.get_all()
     return templates.TemplateResponse("partials/blocklist_table.html", {
@@ -280,6 +419,8 @@ async def remove_blocklist_htmx(ip: str, db: Session = Depends(get_db)):
     repo = BlocklistRepository(db)
     if not repo.remove(ip):
         raise HTTPException(status_code=404)
+    # Auto-sync to all agents
+    await trigger_sync_all_agents(db)
     return HTMLResponse("")
 
 
@@ -327,10 +468,11 @@ async def apply_blocklist_htmx(request: Request, db: Session = Depends(get_db)):
 @router.get("/stats", response_class=HTMLResponse)
 async def stats_page(request: Request, period: str = "24h", db: Session = Depends(get_db)):
     """Statistics page with time range selection."""
-    from controller.database.repositories import EmailStatRepository
+    from controller.database.repositories import EmailStatRepository, FirewallStatRepository
 
     stat_repo = ConnectionStatRepository(db)
     email_stat_repo = EmailStatRepository(db)
+    firewall_stat_repo = FirewallStatRepository(db)
 
     # Parse period to hours (None for lifetime)
     period_map = {"24h": 24, "7d": 168, "30d": 720, "lifetime": None}
@@ -338,40 +480,57 @@ async def stats_page(request: Request, period: str = "24h", db: Session = Depend
 
     summary = stat_repo.get_stats_summary(hours=hours)
     email_summary = email_stat_repo.get_stats_summary(hours=hours)
+    firewall_summary = firewall_stat_repo.get_stats_summary(hours=hours)
     # Logs always show data based on selected period (up to 100 entries)
     log_hours = hours if hours else 720  # Default to 30 days max for logs in lifetime mode
     recent = stat_repo.get_recent(hours=log_hours, limit=100)
     recent_emails = email_stat_repo.get_recent(hours=log_hours, limit=100)
+    recent_firewall = firewall_stat_repo.get_recent(hours=log_hours, limit=100)
 
     return templates.TemplateResponse("stats.html", {
         "request": request,
         "summary": summary,
         "email_summary": email_summary,
+        "firewall_summary": firewall_summary,
         "connections": recent,
         "email_connections": recent_emails,
+        "firewall_entries": recent_firewall,
         "current_period": period,
         "active_page": "stats"
     })
 
 
+# Ports never allowed on public interface (shown in firewall UI; agents enforce these)
+DEFAULT_BLOCKED_PORTS = [
+    {"port": 22, "name": "SSH"},
+    {"port": 23, "name": "Telnet"},
+    {"port": 3389, "name": "RDP"},
+    {"port": 5900, "name": "VNC"},
+    {"port": 5432, "name": "PostgreSQL"},
+    {"port": 27017, "name": "MongoDB"},
+    {"port": 6379, "name": "Redis"},
+    {"port": 11211, "name": "Memcached"},
+    {"port": 3306, "name": "MySQL"},
+    {"port": 1433, "name": "MSSQL"},
+]
+
+
 @router.get("/firewall", response_class=HTMLResponse)
 async def firewall_page(request: Request, db: Session = Depends(get_db)):
-    """Firewall rules management page (includes port rules and blocklist)."""
+    """Firewall rules management page (port rules and default blocked ports)."""
     firewall_repo = FirewallRuleRepository(db)
-    blocklist_repo = BlocklistRepository(db)
     agent_repo = AgentRepository(db)
 
     rules = firewall_repo.get_all()
-    entries = blocklist_repo.get_all()
     agents = agent_repo.get_all()
 
     return templates.TemplateResponse("firewall.html", {
         "request": request,
         "rules": rules,
-        "entries": entries,
         "agents": agents,
         "protocols": [p.value for p in Protocol],
         "actions": [a.value for a in FirewallAction],
+        "default_blocked_ports": DEFAULT_BLOCKED_PORTS,
         "active_page": "firewall"
     })
 
@@ -824,6 +983,7 @@ async def block_ip_from_alert_htmx(request: Request, alert_id: int, db: Session 
     if not blocklist_repo.is_blocked(alert.source_ip):
         reason = f"Blocked from alert: {alert.alert_type.value}"
         blocklist_repo.add(alert.source_ip, reason)
+        await trigger_sync_all_agents(db)
 
     # Acknowledge the alert
     alert_repo.acknowledge(alert_id)

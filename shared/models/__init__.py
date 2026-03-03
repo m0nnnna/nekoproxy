@@ -3,7 +3,7 @@ from .service import ServiceCreate, ServiceUpdate, ServiceResponse
 from .assignment import ServiceAssignmentCreate, ServiceAssignmentUpdate, ServiceAssignmentResponse
 from .firewall import FirewallRuleCreate, FirewallRuleUpdate, FirewallRuleResponse
 from .alert import AlertCreate, AlertResponse
-from .stats import ConnectionStats, StatsReport
+from .stats import ConnectionStats, StatsReport, FirewallRuleStat, FirewallStatsReport
 from .common import Protocol, HealthStatus, FirewallAction, AlertSeverity, AlertType, EmailBlocklistType, EmailDeploymentStatus
 from .email import (
     EmailConfigCreate, EmailConfigUpdate, EmailConfigResponse,
@@ -32,6 +32,8 @@ __all__ = [
     "AlertResponse",
     "ConnectionStats",
     "StatsReport",
+    "FirewallRuleStat",
+    "FirewallStatsReport",
     "Protocol",
     "HealthStatus",
     "FirewallAction",

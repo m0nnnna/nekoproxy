@@ -26,6 +26,7 @@ class Agent(Base):
     connection_stats = relationship("ConnectionStat", back_populates="agent", cascade="all, delete-orphan")
     service_assignments = relationship("ServiceAssignment", back_populates="agent", cascade="all, delete-orphan")
     email_stats = relationship("EmailStat", back_populates="agent", cascade="all, delete-orphan")
+    firewall_stats = relationship("FirewallStat", back_populates="agent", cascade="all, delete-orphan")
 
 
 class Service(Base):
@@ -243,3 +244,35 @@ class EmailStat(Base):
 
     # Relationships
     agent = relationship("Agent")
+
+
+class GlobalSettings(Base):
+    """Single-row global settings (GUI-editable); used when building agent config. Falls back to env if not set."""
+    __tablename__ = "global_settings"
+
+    id = Column(Integer, primary_key=True, index=True)
+    controller_url = Column(String(512), nullable=True)  # URL for agents to use (e.g. https://controller:443)
+    geo_mode = Column(String(20), nullable=True)  # off, allowlist, blocklist
+    geo_countries = Column(String(512), nullable=True)  # comma-separated ISO codes
+    idle_connection_timeout_seconds = Column(Integer, nullable=True)  # 0 = disabled
+    paranoid = Column(Boolean, default=False, nullable=True)
+    agent_secret = Column(String(255), nullable=True)  # optional; agents must send this to register
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class FirewallStat(Base):
+    """Firewall rule traffic statistics (aggregate counters from iptables)."""
+    __tablename__ = "firewall_stats"
+
+    id = Column(Integer, primary_key=True, index=True)
+    agent_id = Column(Integer, ForeignKey("agents.id"), nullable=False)
+    timestamp = Column(DateTime, default=datetime.utcnow, index=True)
+    port = Column(Integer, nullable=False)
+    protocol = Column(String(10), nullable=False)   # "tcp" or "udp"
+    interface = Column(String(50), nullable=False)   # resolved name: "eth0", "wg0"
+    action = Column(String(10), nullable=False)      # "allow" or "block"
+    packets = Column(Integer, default=0)             # delta packets in this interval
+    bytes_count = Column(Integer, default=0)         # delta bytes in this interval
+
+    # Relationships
+    agent = relationship("Agent", back_populates="firewall_stats")

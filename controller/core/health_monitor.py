@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 
 from controller.config import settings
 from controller.database.database import SessionLocal
-from controller.database.repositories import AgentRepository, ConnectionStatRepository
+from controller.database.repositories import AgentRepository, ConnectionStatRepository, FirewallStatRepository
 from shared.models.common import HealthStatus
 
 logger = logging.getLogger(__name__)
@@ -91,6 +91,12 @@ class HealthMonitor:
             deleted = stat_repo.cleanup_old(days=settings.stats_retention_days)
             if deleted > 0:
                 logger.info(f"Cleaned up {deleted} old connection stats")
+
+            fw_repo = FirewallStatRepository(db)
+            fw_deleted = fw_repo.cleanup_old(days=settings.stats_retention_days)
+            if fw_deleted > 0:
+                logger.info(f"Cleaned up {fw_deleted} old firewall stats")
+
             self._last_cleanup = datetime.utcnow()
         finally:
             db.close()

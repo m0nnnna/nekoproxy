@@ -6,7 +6,7 @@ from itertools import cycle
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 
-from controller.database.repositories import AgentRepository, ServiceAssignmentRepository, BlocklistRepository, FirewallRuleRepository
+from controller.database.repositories import AgentRepository, ServiceAssignmentRepository, BlocklistRepository, FirewallRuleRepository, GlobalSettingsRepository
 from controller.database.models import Agent, FirewallRule, ServiceAssignment, Service, BlocklistEntry
 from shared.models import AgentConfig, AgentRegistration, AgentHeartbeat, ServiceResponse, FirewallRuleResponse
 from shared.models.email import AgentEmailConfig
@@ -167,6 +167,29 @@ class AgentManager:
         # Get email config if deployed
         email_config = self._get_email_config(agent_id)
 
+        # Global settings (GUI) override env; fallback to controller settings
+        gs_repo = GlobalSettingsRepository(self.db)
+        gs = gs_repo.get()
+        if gs:
+            geo_mode = (gs.geo_mode or settings.geo_mode or "off").lower()
+            geo_countries_raw = gs.geo_countries or settings.geo_countries or ""
+            idle_timeout = gs.idle_connection_timeout_seconds if gs.idle_connection_timeout_seconds is not None else (getattr(settings, "idle_connection_timeout_seconds", 0) or 0)
+            paranoid = gs.paranoid if gs.paranoid is not None else getattr(settings, "paranoid", False)
+        else:
+            geo_mode = (settings.geo_mode or "off").lower()
+            geo_countries_raw = settings.geo_countries or ""
+            idle_timeout = getattr(settings, "idle_connection_timeout_seconds", 0) or 0
+            paranoid = getattr(settings, "paranoid", False)
+        geo_countries = [c.strip().upper() for c in geo_countries_raw.split(",") if c.strip()]
+        if paranoid:
+            if idle_timeout <= 0:
+                idle_timeout = 120
+            if geo_mode == "off" and geo_countries:
+                geo_mode = "blocklist"
+            elif geo_mode == "off":
+                geo_mode = "blocklist"
+                geo_countries = ["CN", "RU", "KP", "IR"]
+
         return AgentConfig(
             agent_id=agent_id,
             config_version=self._compute_config_version(agent_id),
@@ -174,7 +197,10 @@ class AgentManager:
             blocklist=blocklist,
             firewall_rules=firewall_rules,
             email_config=email_config,
-            heartbeat_interval=settings.heartbeat_interval
+            heartbeat_interval=settings.heartbeat_interval,
+            geo_mode=geo_mode,
+            geo_countries=geo_countries,
+            idle_connection_timeout_seconds=idle_timeout,
         )
 
     def _get_email_config(self, agent_id: int) -> Optional[AgentEmailConfig]:

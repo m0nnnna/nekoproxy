@@ -29,12 +29,24 @@ class Settings(BaseSettings):
     # Agent settings
     heartbeat_interval: int = 30  # seconds
     heartbeat_timeout: int = 90   # seconds before marking unhealthy
+    # Optional: require this secret for agent registration (set NEKO_AGENT_SECRET)
+    agent_secret: Optional[str] = None
+    # Geo filtering (pushed to all agents): off | allowlist | blocklist; countries = comma-separated ISO codes
+    geo_mode: str = "off"
+    geo_countries: str = ""
+    # Idle connection timeout (seconds) for proxy connections; 0 = disabled
+    idle_connection_timeout_seconds: int = 0
+    # Paranoid preset (DDoS lockdown): when True, force stricter defaults in config sent to agents
+    paranoid: bool = False
 
     # Config versioning
     config_version: int = 1
 
     # Stats cleanup
     stats_retention_days: int = 30
+
+    # Agent binary uploads (for push-update): directory to store uploaded agent binaries
+    uploads_dir: str = "./uploads/agent"
 
     # Web UI - paths resolved at runtime
     @property
@@ -44,6 +56,15 @@ class Settings(BaseSettings):
     @property
     def static_dir(self) -> Path:
         return get_base_path() / "controller" / "web" / "static"
+
+    @property
+    def uploads_agent_dir(self) -> Path:
+        """Directory for uploaded agent binaries (push-update). Resolved at runtime."""
+        p = Path(self.uploads_dir)
+        if not p.is_absolute():
+            # Relative to cwd when running (or to executable dir when frozen)
+            p = Path.cwd() / p
+        return p
 
     class Config:
         env_prefix = "NEKO_"

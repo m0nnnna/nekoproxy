@@ -1,11 +1,14 @@
-"""Security monitor for detecting brute force attempts and suspicious activity from system logs."""
+"""Security monitor for detecting brute force attempts and suspicious activity from system logs.
+When thresholds are hit, can auto-block the IP locally and report to controller so blocklist
+syncs to all agents (firewall-style management).
+"""
 
 import asyncio
 import logging
 import re
 from collections import defaultdict
 from datetime import datetime, timedelta
-from typing import Optional, Dict, Set
+from typing import Optional, Dict, Set, Callable, Awaitable
 from pathlib import Path
 
 import httpx
@@ -13,6 +16,16 @@ import httpx
 from agent.config import settings
 
 logger = logging.getLogger(__name__)
+
+# Event types that trigger auto-block (IP banned) in addition to alert
+AUTO_BLOCK_EVENT_TYPES = frozenset({
+    "ssh_failed",
+    "ssh_invalid_user",
+    "mail_auth_failed",
+    "mail_relay_denied",
+    "mail_spam_attempt",
+    "port_scan",
+})
 
 
 class SecurityMonitor:
@@ -102,8 +115,24 @@ class SecurityMonitor:
     # Time window for counting attempts (seconds)
     TIME_WINDOW = 300  # 5 minutes
 
-    def __init__(self, agent_id: int):
+    # Stricter thresholds for auto-block (block as soon as we hit this)
+    AUTO_BLOCK_THRESHOLDS = {
+        "ssh_failed": 3,
+        "ssh_invalid_user": 2,
+        "mail_auth_failed": 3,
+        "mail_relay_denied": 2,
+        "mail_spam_attempt": 2,
+        "mail_rejected": 5,
+        "port_scan": 1,
+    }
+
+    def __init__(
+        self,
+        agent_id: int,
+        on_auto_block: Optional[Callable[[str, str, str], Awaitable[None]]] = None,
+    ):
         self.agent_id = agent_id
+        self.on_auto_block = on_auto_block  # async (ip, reason, event_type) -> None
         self._running = False
         self._task: Optional[asyncio.Task] = None
         self._client: Optional[httpx.AsyncClient] = None
@@ -118,6 +147,9 @@ class SecurityMonitor:
         # Track already alerted IPs (to avoid spam)
         # {event_type: {ip: last_alert_time}}
         self._alerted: Dict[str, Dict[str, datetime]] = defaultdict(dict)
+
+        # Track IPs we've already auto-blocked this run (avoid duplicate report)
+        self._auto_blocked: Set[str] = set()
 
         # Cooldown period before re-alerting same IP for same event
         self._alert_cooldown = timedelta(minutes=30)
@@ -252,7 +284,22 @@ class SecurityMonitor:
                     if last_alert and (now - last_alert) < self._alert_cooldown:
                         continue
 
-                    # Generate alert
+                    # Auto-block first for aggressive event types (then report to controller)
+                    auto_block_threshold = self.AUTO_BLOCK_THRESHOLDS.get(event_type, threshold)
+                    if (
+                        event_type in AUTO_BLOCK_EVENT_TYPES
+                        and len(recent_attempts) >= auto_block_threshold
+                        and self.on_auto_block
+                        and ip not in self._auto_blocked
+                    ):
+                        reason = f"Auto-block: {event_type} ({len(recent_attempts)} attempts)"
+                        try:
+                            await self.on_auto_block(ip, reason, event_type)
+                            self._auto_blocked.add(ip)
+                        except Exception as e:
+                            logger.warning(f"Auto-block callback failed for {ip}: {e}")
+
+                    # Generate alert (so controller UI shows it)
                     await self._send_alert(event_type, ip, recent_attempts)
                     self._alerted[event_type][ip] = now
 

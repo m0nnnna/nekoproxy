@@ -5,6 +5,7 @@ from typing import Optional
 
 from controller.database.database import get_db
 from controller.database.repositories import BlocklistRepository
+from controller.core.agent_sync import trigger_sync_all_agents
 
 router = APIRouter()
 
@@ -12,6 +13,13 @@ router = APIRouter()
 class BlocklistAdd(BaseModel):
     ip: str
     reason: Optional[str] = None
+
+
+class BlocklistReport(BaseModel):
+    """Report from agent: add IP to blocklist and sync to all agents."""
+    ip: str
+    reason: str
+    agent_id: int
 
 
 class BlocklistEntry(BaseModel):
@@ -31,6 +39,25 @@ def add_to_blocklist(entry: BlocklistAdd, db: Session = Depends(get_db)):
 
     repo.add(entry.ip, entry.reason)
     return {"status": "added", "ip": entry.ip}
+
+
+@router.post("/report", status_code=201)
+async def report_block_from_agent(payload: BlocklistReport, db: Session = Depends(get_db)):
+    """Agent reports an IP to block (e.g. after local auto-block). Adds to blocklist and triggers sync to all agents."""
+    repo = BlocklistRepository(db)
+
+    if repo.is_blocked(payload.ip):
+        return {"status": "already_blocked", "ip": payload.ip}
+
+    repo.add(payload.ip, payload.reason)
+
+    result = await trigger_sync_all_agents(db)
+    return {
+        "status": "added",
+        "ip": payload.ip,
+        "synced_agents": result["success"],
+        "failed_agents": result["failed"],
+    }
 
 
 @router.get("", response_model=list[BlocklistEntry])

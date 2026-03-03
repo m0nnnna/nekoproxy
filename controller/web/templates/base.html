@@ -5,7 +5,50 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}NekoProxy{% endblock %}</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        neko: {
+                            50: '#fdf2f8',
+                            100: '#fce7f3',
+                            200: '#fbcfe8',
+                            300: '#f9a8d4',
+                            400: '#f472b6',
+                            500: '#ec4899',
+                            600: '#db2777',
+                            700: '#be185d',
+                            800: '#9d174d',
+                            900: '#831843',
+                        },
+                        paw: {
+                            50: '#faf5ff',
+                            100: '#f3e8ff',
+                            200: '#e9d5ff',
+                            300: '#d8b4fe',
+                            400: '#c084fc',
+                            500: '#a855f7',
+                            600: '#9333ea',
+                        },
+                        whisker: {
+                            50: '#fff7ed',
+                            100: '#ffedd5',
+                            200: '#fed7aa',
+                            300: '#fdba74',
+                            400: '#fb923c',
+                        },
+                    }
+                }
+            }
+        }
+    </script>
     <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+    <link rel="stylesheet" href="/static/style.css">
     <style>
         [x-cloak] { display: none !important; }
         .htmx-indicator { display: none; }
@@ -13,43 +56,66 @@
         .htmx-request.htmx-indicator { display: inline; }
     </style>
 </head>
-<body class="bg-gray-100 min-h-screen">
+<body class="bg-neko-50 min-h-screen font-['Nunito']">
     <!-- Navigation -->
-    <nav class="bg-gray-800 text-white">
+    <nav class="neko-nav text-white shadow-lg">
         <div class="max-w-7xl mx-auto px-4">
             <div class="flex items-center justify-between h-16">
-                <div class="flex items-center">
-                    <span class="text-xl font-bold">NekoProxy</span>
+                <div class="flex items-center space-x-2">
+                    <span class="text-2xl">
+                        <span class="neko-bounce inline-block">
+                            <svg class="w-8 h-8 inline" viewBox="0 0 64 64" fill="currentColor">
+                                <path d="M10 52 C10 30, 20 16, 32 16 C44 16, 54 30, 54 52 Z" fill="white" opacity="0.9"/>
+                                <path d="M10 52 L10 20 L22 32 Z" fill="white" opacity="0.8"/>
+                                <path d="M54 52 L54 20 L42 32 Z" fill="white" opacity="0.8"/>
+                                <circle cx="24" cy="38" r="3" fill="#ec4899"/>
+                                <circle cx="40" cy="38" r="3" fill="#ec4899"/>
+                                <ellipse cx="32" cy="44" rx="2" ry="1.5" fill="#f472b6"/>
+                                <line x1="12" y1="40" x2="22" y2="42" stroke="white" stroke-width="1.5" opacity="0.6"/>
+                                <line x1="12" y1="44" x2="22" y2="44" stroke="white" stroke-width="1.5" opacity="0.6"/>
+                                <line x1="42" y1="42" x2="52" y2="40" stroke="white" stroke-width="1.5" opacity="0.6"/>
+                                <line x1="42" y1="44" x2="52" y2="44" stroke="white" stroke-width="1.5" opacity="0.6"/>
+                            </svg>
+                        </span>
+                    </span>
+                    <span class="text-xl font-extrabold tracking-wide">NekoProxy</span>
+                    <span class="text-xs opacity-75 ml-1">~nya</span>
                 </div>
-                <div class="flex space-x-4">
-                    <a href="/" class="px-3 py-2 rounded-md text-sm font-medium {% if active_page == 'dashboard' %}bg-gray-900{% else %}hover:bg-gray-700{% endif %}">
+                <div class="flex space-x-1">
+                    <a href="/" class="neko-nav-link px-3 py-2 rounded-full text-sm font-semibold transition-all duration-200 {% if active_page == 'dashboard' %}bg-white/20 shadow-inner{% else %}hover:bg-white/10{% endif %}">
                         Dashboard
                     </a>
-                    <a href="/agents" class="px-3 py-2 rounded-md text-sm font-medium {% if active_page == 'agents' %}bg-gray-900{% else %}hover:bg-gray-700{% endif %}">
+                    <a href="/agents" class="neko-nav-link px-3 py-2 rounded-full text-sm font-semibold transition-all duration-200 {% if active_page == 'agents' %}bg-white/20 shadow-inner{% else %}hover:bg-white/10{% endif %}">
                         Agents
                     </a>
-                    <a href="/rules" class="px-3 py-2 rounded-md text-sm font-medium {% if active_page == 'rules' %}bg-gray-900{% else %}hover:bg-gray-700{% endif %}">
+                    <a href="/rules" class="neko-nav-link px-3 py-2 rounded-full text-sm font-semibold transition-all duration-200 {% if active_page == 'rules' %}bg-white/20 shadow-inner{% else %}hover:bg-white/10{% endif %}">
                         Rules
                     </a>
-                    <a href="/firewall" class="px-3 py-2 rounded-md text-sm font-medium {% if active_page == 'firewall' %}bg-gray-900{% else %}hover:bg-gray-700{% endif %}">
+                    <a href="/firewall" class="neko-nav-link px-3 py-2 rounded-full text-sm font-semibold transition-all duration-200 {% if active_page == 'firewall' %}bg-white/20 shadow-inner{% else %}hover:bg-white/10{% endif %}">
                         Firewall
                     </a>
-                    <a href="/blocklist" class="px-3 py-2 rounded-md text-sm font-medium {% if active_page == 'blocklist' %}bg-gray-900{% else %}hover:bg-gray-700{% endif %}">
+                    <a href="/blocklist" class="neko-nav-link px-3 py-2 rounded-full text-sm font-semibold transition-all duration-200 {% if active_page == 'blocklist' %}bg-white/20 shadow-inner{% else %}hover:bg-white/10{% endif %}">
                         Blocklist
                     </a>
-                    <a href="/email" class="px-3 py-2 rounded-md text-sm font-medium {% if active_page == 'email' %}bg-gray-900{% else %}hover:bg-gray-700{% endif %}">
+                    <a href="/email" class="neko-nav-link px-3 py-2 rounded-full text-sm font-semibold transition-all duration-200 {% if active_page == 'email' %}bg-white/20 shadow-inner{% else %}hover:bg-white/10{% endif %}">
                         Email
                     </a>
-                    <a href="/alerts" class="px-3 py-2 rounded-md text-sm font-medium {% if active_page == 'alerts' %}bg-gray-900{% else %}hover:bg-gray-700{% endif %}">
+                    <a href="/alerts" class="neko-nav-link px-3 py-2 rounded-full text-sm font-semibold transition-all duration-200 {% if active_page == 'alerts' %}bg-white/20 shadow-inner{% else %}hover:bg-white/10{% endif %}">
                         Alerts
                     </a>
-                    <a href="/stats" class="px-3 py-2 rounded-md text-sm font-medium {% if active_page == 'stats' %}bg-gray-900{% else %}hover:bg-gray-700{% endif %}">
+                    <a href="/stats" class="neko-nav-link px-3 py-2 rounded-full text-sm font-semibold transition-all duration-200 {% if active_page == 'stats' %}bg-white/20 shadow-inner{% else %}hover:bg-white/10{% endif %}">
                         Stats
+                    </a>
+                    <a href="/settings" class="neko-nav-link px-3 py-2 rounded-full text-sm font-semibold transition-all duration-200 {% if active_page == 'settings' %}bg-white/20 shadow-inner{% else %}hover:bg-white/10{% endif %}">
+                        Settings
                     </a>
                 </div>
             </div>
         </div>
     </nav>
+
+    <!-- Decorative paw prints -->
+    <div class="paw-trail" aria-hidden="true"></div>
 
     <!-- Main Content -->
     <main class="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
@@ -57,9 +123,14 @@
     </main>
 
     <!-- Footer -->
-    <footer class="bg-gray-800 text-gray-400 py-4 mt-8">
-        <div class="max-w-7xl mx-auto px-4 text-center text-sm">
-            NekoProxy v2.0.0
+    <footer class="neko-footer text-white/70 py-6 mt-8">
+        <div class="max-w-7xl mx-auto px-4 text-center">
+            <div class="text-lg mb-1">
+                =^.^= NekoProxy v2.0.0 =^.^=
+            </div>
+            <div class="text-xs opacity-60">
+                Purr-otecting your network, one paw at a time ~nya
+            </div>
         </div>
     </footer>
 </body>

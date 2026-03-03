@@ -1,27 +1,27 @@
 <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
     {% for agent in agents %}
-    <div class="flex items-center p-4 bg-gray-50 rounded-lg">
+    <div class="flex items-center p-4 bg-neko-50 rounded-xl border border-neko-100 transition-all duration-200 hover:shadow-md hover:border-neko-200">
         <div class="flex-shrink-0">
             {% if agent.status.value == 'healthy' %}
-            <div class="w-3 h-3 bg-green-500 rounded-full"></div>
+            <div class="w-3 h-3 bg-green-500 rounded-full status-pulse"></div>
             {% elif agent.status.value == 'unhealthy' %}
             <div class="w-3 h-3 bg-red-500 rounded-full"></div>
             {% else %}
-            <div class="w-3 h-3 bg-gray-400 rounded-full"></div>
+            <div class="w-3 h-3 bg-neko-300 rounded-full"></div>
             {% endif %}
         </div>
         <div class="ml-4">
-            <div class="text-sm font-medium text-gray-900">{{ agent.hostname }}</div>
-            <div class="text-xs text-gray-500">{{ agent.wireguard_ip }}</div>
+            <div class="text-sm font-bold text-neko-900">{{ agent.hostname }}</div>
+            <div class="text-xs text-neko-400 font-mono">{{ agent.wireguard_ip }}</div>
         </div>
         <div class="ml-auto text-right">
-            <div class="text-sm font-semibold text-gray-900">{{ agent.active_connections }}</div>
-            <div class="text-xs text-gray-500">connections</div>
+            <div class="text-sm font-extrabold text-neko-800">{{ agent.active_connections }}</div>
+            <div class="text-xs text-neko-400">connections</div>
         </div>
     </div>
     {% else %}
-    <div class="col-span-3 text-center text-gray-500 py-4">
-        No agents registered
+    <div class="col-span-3 text-center py-4 neko-empty">
+        No agents registered (=^.^=)
     </div>
     {% endfor %}
 </div>
