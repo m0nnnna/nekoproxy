@@ -101,7 +101,7 @@
                 <select name="agent_ids" multiple
                         class="neko-input w-full h-32">
                     {% for agent in agents %}
-                    <option value="{{ agent.id }}">{{ agent.hostname }} ({{ agent.wireguard_ip }})</option>
+                    <option value="{{ agent.id }}">{{ agent.hostname }} ({{ agent.wireguard_ip or 'internal' }})</option>
                     {% endfor %}
                 </select>
                 <p class="mt-1 text-xs text-neko-400">Hold Ctrl/Cmd to select multiple</p>

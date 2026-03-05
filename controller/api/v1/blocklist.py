@@ -49,7 +49,7 @@ async def report_block_from_agent(payload: BlocklistReport, db: Session = Depend
     if repo.is_blocked(payload.ip):
         return {"status": "already_blocked", "ip": payload.ip}
 
-    repo.add(payload.ip, payload.reason)
+    repo.add(payload.ip, payload.reason, source="agent_report")
 
     result = await trigger_sync_all_agents(db)
     return {

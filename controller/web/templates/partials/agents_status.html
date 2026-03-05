@@ -12,7 +12,7 @@
         </div>
         <div class="ml-4">
             <div class="text-sm font-bold text-neko-900">{{ agent.hostname }}</div>
-            <div class="text-xs text-neko-400 font-mono">{{ agent.wireguard_ip }}</div>
+            <div class="text-xs text-neko-400 font-mono">{{ agent.wireguard_ip or 'internal' }}</div>
         </div>
         <div class="ml-auto text-right">
             <div class="text-sm font-extrabold text-neko-800">{{ agent.active_connections }}</div>

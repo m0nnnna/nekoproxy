@@ -11,7 +11,8 @@ from .email import AgentEmailConfig
 class AgentRegistration(BaseModel):
     """Sent by agent when registering with controller."""
     hostname: str
-    wireguard_ip: str
+    wireguard_ip: Optional[str] = None  # Optional for internal agents (no WireGuard)
+    control_url: Optional[str] = None  # Optional base URL for controller to reach agent (e.g. http://127.0.0.1:8002 for same-machine)
     public_ip: Optional[str] = None
     version: str = "2.0.0"
     agent_secret: Optional[str] = None  # Required if controller has NEKO_AGENT_SECRET set
@@ -40,13 +41,15 @@ class AgentConfig(BaseModel):
     geo_countries: List[str] = Field(default_factory=list)
     # Idle connection timeout (seconds); 0 = disabled
     idle_connection_timeout_seconds: int = 0
+    # Internal agent: allow all proxy ports on public (including normally blocked e.g. SSH/DB) for internal use
+    internal: bool = False
 
 
 class AgentStatus(BaseModel):
     """Agent status as tracked by controller."""
     id: int
     hostname: str
-    wireguard_ip: str
+    wireguard_ip: Optional[str] = None
     public_ip: Optional[str] = None
     status: HealthStatus = HealthStatus.UNKNOWN
     last_heartbeat: Optional[datetime] = None

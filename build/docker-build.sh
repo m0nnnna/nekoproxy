@@ -4,7 +4,7 @@ set -e
 COMPONENT="${1:-all}"
 
 echo "============================================================"
-echo "NekoProxy Docker Build (Ubuntu 20.04 target)"
+echo "NekoProxy Docker Build (Linux)"
 echo "============================================================"
 echo "Building: $COMPONENT"
 echo ""

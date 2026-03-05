@@ -43,6 +43,11 @@ print_error() {
     echo -e "${RED}✗ $1${NC}"
 }
 
+# Detect init system: systemd (Ubuntu/Debian) or OpenRC (Alpine)
+use_systemd() {
+    command -v systemctl >/dev/null 2>&1 && systemctl list-units --type=service >/dev/null 2>&1
+}
+
 # Check if running as root
 check_root() {
     if [[ $EUID -ne 0 ]]; then
@@ -161,11 +166,12 @@ EOF
     print_success "Created $CONFIG_FILE"
 }
 
-# Create systemd service
+# Create systemd or OpenRC service (Alpine uses OpenRC)
 create_service() {
-    print_header "Creating systemd service..."
+    if use_systemd; then
+        print_header "Creating systemd service..."
 
-    cat > "/etc/systemd/system/$SERVICE_NAME.service" << EOF
+        cat > "/etc/systemd/system/$SERVICE_NAME.service" << EOF
 [Unit]
 Description=NekoProxy Controller
 Documentation=https://github.com/your-repo/nekoproxy
@@ -198,29 +204,58 @@ PrivateTmp=true
 WantedBy=multi-user.target
 EOF
 
-    print_success "Created /etc/systemd/system/$SERVICE_NAME.service"
+        print_success "Created /etc/systemd/system/$SERVICE_NAME.service"
+        systemctl daemon-reload
+        print_success "Reloaded systemd"
+    else
+        print_header "Creating OpenRC service (Alpine)..."
 
-    # Reload systemd
-    systemctl daemon-reload
-    print_success "Reloaded systemd"
+        cat > "/etc/init.d/$SERVICE_NAME" << INITD
+#!/sbin/openrc-run
+
+description="NekoProxy Controller"
+command="/bin/sh"
+command_args="-c 'set -a; [ -r $CONFIG_FILE ] && . $CONFIG_FILE; set +a; exec $INSTALL_DIR/nekoproxy-controller'"
+command_background="yes"
+pidfile="/run/nekoproxy-controller.pid"
+output_log="/var/log/nekoproxy-controller.log"
+error_log="/var/log/nekoproxy-controller.log"
+
+depend() {
+    need net
+}
+INITD
+        chmod +x "/etc/init.d/$SERVICE_NAME"
+        print_success "Created /etc/init.d/$SERVICE_NAME"
+    fi
 }
 
 # Enable and start service
 start_service() {
     print_header "Starting service..."
 
-    systemctl enable "$SERVICE_NAME"
-    print_success "Enabled $SERVICE_NAME to start on boot"
-
-    systemctl start "$SERVICE_NAME"
-    print_success "Started $SERVICE_NAME"
-
-    # Wait a moment and check status
-    sleep 2
-    if systemctl is-active --quiet "$SERVICE_NAME"; then
-        print_success "Service is running!"
+    if use_systemd; then
+        systemctl enable "$SERVICE_NAME"
+        print_success "Enabled $SERVICE_NAME to start on boot"
+        systemctl start "$SERVICE_NAME"
+        print_success "Started $SERVICE_NAME"
+        sleep 2
+        if systemctl is-active --quiet "$SERVICE_NAME"; then
+            print_success "Service is running!"
+        else
+            print_warning "Service may have issues. Check: journalctl -u $SERVICE_NAME -f"
+        fi
     else
-        print_warning "Service may have issues. Check: journalctl -u $SERVICE_NAME -f"
+        rc-update add "$SERVICE_NAME" default 2>/dev/null || true
+        print_success "Enabled $SERVICE_NAME to start on boot"
+        "/etc/init.d/$SERVICE_NAME" start
+        print_success "Started $SERVICE_NAME"
+        sleep 2
+        if "/etc/init.d/$SERVICE_NAME" status >/dev/null 2>&1; then
+            print_success "Service is running!"
+        else
+            print_warning "Service may have issues. Check: /var/log/nekoproxy-controller.log"
+        fi
     fi
 }
 
@@ -235,10 +270,17 @@ show_instructions() {
     echo "API:    ${CYAN}http://$LISTEN_HOST:$LISTEN_PORT/api/v1/${NC}"
     echo ""
     echo "Useful commands:"
-    echo "  ${CYAN}systemctl status $SERVICE_NAME${NC}    - Check service status"
-    echo "  ${CYAN}systemctl restart $SERVICE_NAME${NC}   - Restart the controller"
-    echo "  ${CYAN}systemctl stop $SERVICE_NAME${NC}      - Stop the controller"
-    echo "  ${CYAN}journalctl -u $SERVICE_NAME -f${NC}    - View live logs"
+    if use_systemd; then
+        echo "  ${CYAN}systemctl status $SERVICE_NAME${NC}    - Check service status"
+        echo "  ${CYAN}systemctl restart $SERVICE_NAME${NC}   - Restart the controller"
+        echo "  ${CYAN}systemctl stop $SERVICE_NAME${NC}      - Stop the controller"
+        echo "  ${CYAN}journalctl -u $SERVICE_NAME -f${NC}    - View live logs"
+    else
+        echo "  ${CYAN}rc-service $SERVICE_NAME status${NC}   - Check service status"
+        echo "  ${CYAN}rc-service $SERVICE_NAME restart${NC}  - Restart the controller"
+        echo "  ${CYAN}rc-service $SERVICE_NAME stop${NC}      - Stop the controller"
+        echo "  ${CYAN}tail -f /var/log/nekoproxy-controller.log${NC} - View logs"
+    fi
     echo ""
     echo "Configuration file: ${CYAN}$CONFIG_FILE${NC}"
     echo "Database location:  ${CYAN}$DATA_DIR/nekoproxy.db${NC}"
@@ -252,23 +294,26 @@ show_instructions() {
 uninstall() {
     print_header "Uninstalling NekoProxy Controller..."
 
-    # Stop and disable service
-    if systemctl is-active --quiet "$SERVICE_NAME" 2>/dev/null; then
-        systemctl stop "$SERVICE_NAME"
-        print_success "Stopped service"
+    if use_systemd; then
+        if systemctl is-active --quiet "$SERVICE_NAME" 2>/dev/null; then
+            systemctl stop "$SERVICE_NAME"
+            print_success "Stopped service"
+        fi
+        if systemctl is-enabled --quiet "$SERVICE_NAME" 2>/dev/null; then
+            systemctl disable "$SERVICE_NAME"
+            print_success "Disabled service"
+        fi
+        rm -f "/etc/systemd/system/$SERVICE_NAME.service"
+        systemctl daemon-reload
+    else
+        "/etc/init.d/$SERVICE_NAME" stop 2>/dev/null || true
+        rc-update del "$SERVICE_NAME" default 2>/dev/null || true
+        rm -f "/etc/init.d/$SERVICE_NAME"
+        print_success "Stopped and removed OpenRC service"
     fi
 
-    if systemctl is-enabled --quiet "$SERVICE_NAME" 2>/dev/null; then
-        systemctl disable "$SERVICE_NAME"
-        print_success "Disabled service"
-    fi
-
-    # Remove files
-    rm -f "/etc/systemd/system/$SERVICE_NAME.service"
     rm -f "$CONFIG_FILE"
     rm -f "$INSTALL_DIR/$BINARY_NAME"
-
-    systemctl daemon-reload
 
     print_warning "Database preserved at $DATA_DIR/nekoproxy.db"
     print_warning "To remove all data: rm -rf $DATA_DIR"

@@ -63,15 +63,16 @@ class ControlAPI:
             self._runner = web.AppRunner(self._app)
             await self._runner.setup()
 
-            # Listen on wireguard IP only (not public interface)
+            # Listen on wireguard IP when set (not public); otherwise 0.0.0.0 for internal/same-machine
+            bind_host = settings.wireguard_ip if settings.wireguard_ip else "0.0.0.0"
             self._site = web.TCPSite(
                 self._runner,
-                settings.wireguard_ip,
+                bind_host,
                 settings.api_port
             )
             await self._site.start()
 
-            logger.info(f"Control API listening on {settings.wireguard_ip}:{settings.api_port}")
+            logger.info(f"Control API listening on {bind_host}:{settings.api_port}")
         except Exception as e:
             logger.error(f"Failed to start Control API: {e}")
             logger.warning("Push sync from controller will not work")

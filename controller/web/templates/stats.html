@@ -29,13 +29,13 @@
 <!-- Proxy Connection Stats -->
 {% set period_label = {'24h': '24h', '7d': '7 days', '30d': '30 days', 'lifetime': 'Lifetime'}[current_period] %}
 <h2 class="text-lg neko-subheader mb-4">Proxy Connections ({{ period_label }})</h2>
-<div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
+<div class="grid grid-cols-1 md:grid-cols-5 gap-4 mb-8">
     <div class="neko-stat-card bg-gradient-to-br from-neko-50 to-paw-50 border border-neko-200">
         <div class="text-sm font-semibold text-neko-600">Total Connections</div>
         <div class="mt-2 text-3xl font-extrabold text-neko-900">{{ summary.total_connections }}</div>
     </div>
     <div class="neko-stat-card bg-gradient-to-br from-red-50 to-red-100 border border-red-200">
-        <div class="text-sm font-semibold text-red-500">Auto blocked</div>
+        <div class="text-sm font-semibold text-red-500">Blocked Connections</div>
         <div class="mt-2 text-3xl font-extrabold text-red-600">{{ summary.blocked_connections }}</div>
     </div>
     <div class="neko-stat-card bg-gradient-to-br from-paw-50 to-paw-100 border border-paw-200">
@@ -67,6 +67,10 @@
             {{ bytes }} B
             {% endif %}
         </div>
+    </div>
+    <div class="neko-stat-card bg-gradient-to-br from-orange-50 to-orange-100 border border-orange-200">
+        <div class="text-sm font-semibold text-orange-600">IPs auto-added to blocklist</div>
+        <div class="mt-2 text-3xl font-extrabold text-orange-700">{{ summary.auto_blocklist_count|default(0) }}</div>
     </div>
 </div>
 

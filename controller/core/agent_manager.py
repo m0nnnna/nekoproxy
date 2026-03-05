@@ -29,26 +29,30 @@ class AgentManager:
 
     def register_agent(self, registration: AgentRegistration) -> Agent:
         """Register a new agent or update existing one."""
-        existing = self.agent_repo.get_by_wireguard_ip(registration.wireguard_ip)
+        wg_ip = registration.wireguard_ip if registration.wireguard_ip else None
+        if wg_ip:
+            existing = self.agent_repo.get_by_wireguard_ip(wg_ip)
+        else:
+            existing = self.agent_repo.get_by_hostname_internal(registration.hostname)
 
         if existing:
-            logger.info(f"Agent {registration.hostname} re-registered from {registration.wireguard_ip}")
-            # Update existing agent
+            logger.info(f"Agent {registration.hostname} re-registered" + (f" from {wg_ip}" if wg_ip else " (internal)"))
             existing.hostname = registration.hostname
             existing.public_ip = registration.public_ip
             existing.version = registration.version
+            existing.control_url = registration.control_url if getattr(registration, "control_url", None) else None
             self.db.commit()
             self.db.refresh(existing)
             return existing
 
-        # Create new agent
         agent = self.agent_repo.create(
             hostname=registration.hostname,
-            wireguard_ip=registration.wireguard_ip,
+            wireguard_ip=wg_ip,
             public_ip=registration.public_ip,
-            version=registration.version
+            version=registration.version,
+            control_url=getattr(registration, "control_url", None) or None,
         )
-        logger.info(f"New agent registered: {agent.hostname} ({agent.wireguard_ip})")
+        logger.info(f"New agent registered: {agent.hostname}" + (f" ({agent.wireguard_ip})" if agent.wireguard_ip else " (internal)"))
         self._invalidate_cycle()
         return agent
 
@@ -201,6 +205,7 @@ class AgentManager:
             geo_mode=geo_mode,
             geo_countries=geo_countries,
             idle_connection_timeout_seconds=idle_timeout,
+            internal=getattr(agent, "internal", False),
         )
 
     def _get_email_config(self, agent_id: int) -> Optional[AgentEmailConfig]:

@@ -1,15 +1,16 @@
 @echo off
 REM NekoProxy Build Script for Windows
 REM
-REM This script builds the controller for Windows.
-REM Note: Agent is only supported on Linux (Ubuntu).
+REM Builds the controller and/or agent for Windows.
 REM
 REM Usage:
-REM   build.bat [controller|all] [--clean]
+REM   build.bat [controller|agent|all] [--clean]
 REM
 REM Examples:
 REM   build.bat controller   - Build controller for Windows
-REM   build.bat --clean      - Clean build artifacts
+REM   build.bat agent        - Build agent for Windows
+REM   build.bat all          - Build controller and agent
+REM   build.bat --clean       - Clean build artifacts
 
 setlocal enabledelayedexpansion
 
@@ -27,11 +28,7 @@ if /i "%~1"=="controller" (
 ) else if /i "%~1"=="all" (
     set "COMPONENT=all"
 ) else if /i "%~1"=="agent" (
-    echo.
-    echo Warning: Agent is only supported on Linux ^(Ubuntu^).
-    echo To build the agent, run build.sh on an Ubuntu system.
-    echo.
-    exit /b 1
+    set "COMPONENT=agent"
 ) else if /i "%~1"=="--clean" (
     set "CLEAN=1"
 ) else if /i "%~1"=="-h" (
@@ -61,6 +58,7 @@ if defined CLEAN (
     echo Cleaning build artifacts...
     if exist dist\windows rmdir /s /q dist\windows
     if exist build\controller rmdir /s /q build\controller
+    if exist build\agent rmdir /s /q build\agent
     for /d /r %%d in (__pycache__) do @if exist "%%d" rmdir /s /q "%%d"
     echo Clean complete.
     echo.
@@ -87,7 +85,9 @@ echo Installing dependencies...
 python -m pip install -r requirements.txt -q
 
 if "%COMPONENT%"=="controller" goto :build_controller
+if "%COMPONENT%"=="agent" goto :build_agent
 if "%COMPONENT%"=="all" goto :build_controller
+goto :show_usage
 
 :build_controller
 echo.
@@ -105,7 +105,28 @@ if exist "dist\windows\nekoproxy-controller.exe" (
     echo Error: Controller build failed!
     exit /b 1
 )
+if "%COMPONENT%"=="all" goto :build_agent
+goto :build_done
 
+:build_agent
+echo.
+echo ============================================================
+echo Building Agent for Windows...
+echo ============================================================
+
+python -m PyInstaller --clean --noconfirm --distpath dist\windows --workpath build\agent build\agent.spec
+
+if exist "dist\windows\nekoproxy-agent.exe" (
+    echo.
+    echo Agent built successfully!
+    for %%A in (dist\windows\nekoproxy-agent.exe) do echo Output: dist\windows\nekoproxy-agent.exe ^(%%~zA bytes^)
+) else (
+    echo Error: Agent build failed!
+    exit /b 1
+)
+goto :build_done
+
+:build_done
 echo.
 echo ============================================================
 echo Build Complete!
@@ -118,18 +139,19 @@ exit /b 0
 echo.
 echo NekoProxy Build Script for Windows
 echo.
-echo Usage: build.bat [controller^|all] [--clean]
+echo Usage: build.bat [controller^|agent^|all] [--clean]
 echo.
 echo Components:
 echo   controller  Build the controller for Windows
-echo   all         Build all Windows-supported components ^(controller only^)
+echo   agent       Build the agent for Windows
+echo   all         Build controller and agent
 echo.
 echo Options:
 echo   --clean     Clean build artifacts before building
 echo.
 echo Examples:
 echo   build.bat controller       - Build controller
-echo   build.bat --clean all      - Clean and rebuild
-echo.
-echo Note: Agent is only supported on Linux. Run build.sh on Ubuntu to build the agent.
+echo   build.bat agent            - Build agent
+echo   build.bat all              - Build both
+echo   build.bat --clean all      - Clean and rebuild both
 exit /b 1

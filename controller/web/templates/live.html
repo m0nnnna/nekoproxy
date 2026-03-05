@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+
+{% block title %}Live View - NekoProxy{% endblock %}
+
+{% block content %}
+<div class="flex justify-between items-center mb-6">
+    <h1 class="text-2xl neko-header">Live connections</h1>
+    <p class="text-sm text-neko-500">Last 60 seconds · refreshes every 2s</p>
+</div>
+
+<div class="neko-card p-4 mb-4">
+    <p class="text-sm text-neko-600">Connections and the services they use, as reported by agents. Use this to review traffic in real time.</p>
+</div>
+
+<div class="neko-table-container">
+    <div class="neko-scroll">
+        <table class="min-w-full neko-table">
+            <thead class="sticky top-0 z-10 bg-neko-50">
+                <tr>
+                    <th class="text-left">Time</th>
+                    <th class="text-left">Agent</th>
+                    <th class="text-left">Service</th>
+                    <th class="text-left">Client IP</th>
+                    <th class="text-left">Status</th>
+                    <th class="text-left">Duration</th>
+                    <th class="text-left">Sent</th>
+                    <th class="text-left">Received</th>
+                </tr>
+            </thead>
+            <tbody id="live-connections-body"
+                   hx-get="/partials/live-connections?seconds=60"
+                   hx-trigger="every 2s"
+                   hx-swap="innerHTML">
+                {% include "partials/live_connections.html" %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<div class="mt-2 text-sm text-neko-400">
+    Live view shows connection stats from the last 60 seconds. Empty table means no recent activity.
+</div>
+{% endblock %}

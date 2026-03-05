@@ -41,7 +41,7 @@
     <td class="whitespace-nowrap">
         {% if rule.assignment.agent %}
         <div class="text-sm text-neko-900 font-medium">{{ rule.assignment.agent.hostname }}</div>
-        <div class="text-xs text-neko-400 font-mono">{{ rule.assignment.agent.wireguard_ip }}</div>
+        <div class="text-xs text-neko-400 font-mono">{{ rule.assignment.agent.wireguard_ip or 'internal' }}</div>
         {% else %}
         <span class="neko-badge neko-badge-purple">All Agents</span>
         {% endif %}

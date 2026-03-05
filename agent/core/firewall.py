@@ -328,9 +328,11 @@ class FirewallManager:
         allowed_ports: List[Tuple[int, str]],
         harden_public: bool = True,
         allow_wg: bool = True,
+        allow_dangerous_ports_on_public: bool = False,
     ):
         """Apply auto-generated baseline: default-deny on public (only allowed_ports + established),
-        allow WireGuard interface. Reduces SSH/scan noise and locks down public while keeping WG free.
+        allow WireGuard interface. If allow_dangerous_ports_on_public (internal agent), do not filter
+        DANGEROUS_PORTS_ON_PUBLIC so all proxy ports are allowed.
         """
         if not self._initialized:
             await self.initialize()
@@ -364,14 +366,20 @@ class FirewallManager:
         await self._run_iptables("-F", PUBLIC_BASELINE_CHAIN)
         if public_iface and harden_public:
             await add_accept_established(PUBLIC_BASELINE_CHAIN)
-            safe_ports = [(p, proto) for p, proto in allowed_ports if p not in DANGEROUS_PORTS_ON_PUBLIC]
+            if allow_dangerous_ports_on_public:
+                safe_ports = list(allowed_ports)
+            else:
+                safe_ports = [(p, proto) for p, proto in allowed_ports if p not in DANGEROUS_PORTS_ON_PUBLIC]
             for port, proto in safe_ports:
                 await self._run_iptables("-A", PUBLIC_BASELINE_CHAIN, "-p", proto, "--dport", str(port), "-j", "ACCEPT")
             await self._run_iptables("-A", PUBLIC_BASELINE_CHAIN, "-j", "DROP")
             skipped = len(allowed_ports) - len(safe_ports)
-            if skipped:
-                logger.info(f"Public baseline: excluded {skipped} dangerous port(s) from public allow list")
-            logger.info(f"Public baseline: {public_iface} default-deny, allow {len(safe_ports)} ports (SSH/DBs never on public)")
+            if allow_dangerous_ports_on_public:
+                logger.info(f"Public baseline: {public_iface} internal mode, allow all {len(safe_ports)} proxy ports")
+            else:
+                if skipped:
+                    logger.info(f"Public baseline: excluded {skipped} dangerous port(s) from public allow list")
+                logger.info(f"Public baseline: {public_iface} default-deny, allow {len(safe_ports)} ports (SSH/DBs never on public)")
 
         # WG chain: allow WireGuard interface (controller, SSH over WG, etc.)
         await self._run_iptables("-F", WG_BASELINE_CHAIN)
@@ -397,6 +405,8 @@ class FirewallManager:
 
     async def shutdown(self):
         """Clean up firewall rules on shutdown."""
+        if not self._initialized:
+            return
         await self.clear_all_rules()
 
         # Remove baseline jump rules (we inserted with -i iface -j CHAIN, so -D must match)

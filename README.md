@@ -31,6 +31,8 @@ A distributed TCP/UDP proxy management system with centralized control. Deploy p
 - **Agents**: Deployed on proxy servers, execute forwarding rules and firewall policies  
 - **Communication**: Agents connect to controller over WireGuard VPN  
 
+**Standard ports:** The controller listens on **8001** and the agent control API on **8002** by default. These are the expected ports for sync, push-update, and agent↔controller communication.  
+
 ## Requirements
 
 - Python 3.10+ (for development)  
@@ -41,10 +43,10 @@ A distributed TCP/UDP proxy management system with centralized control. Deploy p
 
 ### Building
 
-Build Linux binaries using Docker:
+Build Linux binaries using Docker. The default build uses **Ubuntu 20.04** and produces **glibc** binaries that run on Ubuntu, Debian, and other glibc-based distros.
 
 ```bash
-# Build both agent and controller
+# Build both agent and controller (Ubuntu/glibc)
 ./build-docker.sh all
 
 # Or build individually
@@ -53,6 +55,16 @@ Build Linux binaries using Docker:
 ```
 
 Output binaries will be in `dist/linux/`.
+
+**Alpine Linux:** The Ubuntu-built binaries are **not** compatible with Alpine (Alpine uses **musl** libc). To run on Alpine, either:
+- **Build for Alpine:** use the Alpine Docker build so the binaries are linked against musl:
+  ```bash
+  ./build-docker-alpine.sh all   # or agent | controller
+  ```
+  Output will be in `dist/linux-alpine/`. Use these binaries on Alpine only.
+- **Or run from source on Alpine:** install Python 3 and run with `pip install -r requirements.txt` then `python -m agent.main` / `python -m uvicorn controller.main:app --port 8001`.
+
+To build the **Windows agent** (and/or controller) on a Windows machine, use PyInstaller: `pyinstaller build/agent.spec` and/or `pyinstaller build/controller.spec`. The agent executable is written to `dist/nekoproxy-agent.exe`. Copy it to `dist/windows/` if you keep Windows builds there. The Windows agent proxies traffic and reports to the controller. **Firewall:** on Windows the agent can manage **Windows Firewall** (blocklist by IP, port allow/block rules, and baseline: only proxy ports on Public profile). Run the agent as **Administrator** (or install as a service, which runs elevated) for firewall rules to be applied; otherwise blocklist and rate limiting still apply in the proxy layer only. Log-based security monitoring and iptables counter stats are Linux-only and are skipped on Windows.
 
 ### Installing the Controller
 
@@ -81,6 +93,8 @@ The installer will prompt for:
 - WireGuard IP of this agent
 - Hostname for identification
 
+The same install and update scripts work on **Alpine Linux** (OpenRC): they detect systemd vs OpenRC and create the appropriate service (systemd unit or `/etc/init.d/` script). Use the binaries from `dist/linux-alpine/` when building for Alpine.
+
 ### Updating (Linux)
 
 To upgrade the binary without changing config or data, use the update scripts from `dist/linux/` (after a Docker build):
@@ -95,37 +109,36 @@ sudo ./update-agent.sh
 # Or: sudo ./update-agent.sh /path/to/new/nekoproxy-agent
 ```
 
-On Windows, use `dist\windows\update-controller.ps1 -BinaryPath "C:\path\to\new\nekoproxy-controller.exe"`.
+On Windows, use `dist\windows\update-controller.ps1` for the controller and `dist\windows\update-agent.ps1` for the agent (each takes `-BinaryPath` to the new exe).
 
 ### Windows: run as a service (no user logged in)
 
-The Windows builds can install themselves as a Windows service so they run without a user logged in.
+The Windows builds can install themselves as a Windows service so they run without a user logged in. Use the **install scripts** in the same folder as the exe to register the service (they run the exe with `install` so the service uses that exe in that directory):
 
-**Controller**
+**Using install scripts (recommended)** — run PowerShell as Administrator from the folder containing the exe:
 
 ```powershell
-# Install the service (run once; run PowerShell as Administrator)
-.\nekoproxy-controller.exe install
-# Optional: set startup to automatic
-.\nekoproxy-controller.exe update --startup=auto
+# Controller: register service from this directory, optionally start
+.\install-controller.ps1
+.\install-controller.ps1 -StartService   # install and start
+.\install-controller.ps1 -Uninstall     # remove service
 
-# Start / stop / remove
+# Agent (place agent.env in same folder for config)
+.\install-agent.ps1
+.\install-agent.ps1 -StartService
+.\install-agent.ps1 -Uninstall
+```
+
+**Or call the exe directly:**
+
+```powershell
+.\nekoproxy-controller.exe install
 .\nekoproxy-controller.exe start
 .\nekoproxy-controller.exe stop
 .\nekoproxy-controller.exe remove
 ```
 
-**Agent**
-
-```powershell
-.\nekoproxy-agent.exe install
-.\nekoproxy-agent.exe update --startup=auto
-.\nekoproxy-agent.exe start
-.\nekoproxy-agent.exe stop
-.\nekoproxy-agent.exe remove
-```
-
-Install and start must be run as **Administrator**. After `install`, configure the agent/controller (e.g. env or config file in the same directory as the exe) before starting. The update script (`update-controller.ps1`) detects and restarts the service if it is installed. Running the exe with no arguments (e.g. double‑click) starts the app in the foreground instead of as a service.
+Install and start must be run as **Administrator**. After `install`, configure the agent/controller (e.g. `agent.env` or `.env` in the same directory as the exe) before starting. The update scripts (`update-controller.ps1`, `update-agent.ps1`) detect and restarts the service if it is installed. Running the exe with no arguments starts the app in the foreground instead of as a service.
 
 ## Firewall management and auto-blocking
 
@@ -210,11 +223,14 @@ Configuration via environment variables or `/etc/nekoproxy/agent.env`:
 | `NEKO_AGENT_LISTEN_ON_WIREGUARD_ONLY` | `false` | Bind proxy to WireGuard IP only (no proxy on public) |
 | `NEKO_AGENT_RATE_LIMIT_PER_MINUTE` | `60` | Max new connections per client IP per minute; 0 = disabled |
 | `NEKO_AGENT_RATE_LIMIT_AUTO_BLOCK` | `true` | Auto-block and report IPs that exceed rate limit |
+| `NEKO_AGENT_CONTROL_URL` | — | Optional base URL for controller to reach this agent (e.g. `http://127.0.0.1:8002`) so Sync/push-update work when agent has no WireGuard IP |
 | `NEKO_AGENT_AGENT_SECRET` | — | Optional; must match controller `NEKO_AGENT_SECRET` to register |
 | `NEKO_AGENT_GEOLITE2_DB_PATH` | — | Path to MaxMind GeoLite2-Country.mmdb for geo allow/block (optional) |
 | `NEKO_AGENT_PARANOID` | `false` | One env for DDoS lockdown: 30/min rate limit, WG-only listen, auto-block on rate limit |
 
 **Controller URL with HTTPS:** Use `https://your-controller:443` (or `https://...` with no port) when the controller is behind Nginx; see [docs/HTTPS-SETUP.md](docs/HTTPS-SETUP.md).
+
+**Windows agent config:** Put an `agent.env` (or `.env`) file in the same directory as `nekoproxy-agent.exe`. Use the same env vars as Linux (e.g. `NEKO_AGENT_CONTROLLER_URL=http://your-controller:8001`, `NEKO_AGENT_HOSTNAME=desktop1`). Omit `NEKO_AGENT_WIREGUARD_IP` for **internal agents** (no WireGuard). For sync and push-update to work from the controller when the agent has no WireGuard IP (e.g. same-machine or Windows), set **`NEKO_AGENT_CONTROL_URL`** to the URL the controller can use to reach the agent (e.g. `http://127.0.0.1:8002` when controller and agent run on the same host).
 
 **Geo filtering:** Set `NEKO_GEO_MODE` and `NEKO_GEO_COUNTRIES` on the controller; install `geoip2` and set `NEKO_AGENT_GEOLITE2_DB_PATH` on agents (download GeoLite2-Country.mmdb from MaxMind).
 
@@ -239,6 +255,7 @@ View and manage connected proxy agents, including health status and resource usa
 ### Firewall
 - Port-based allow/deny rules  
 - Interface types: `public`, `wireguard`, or specific interfaces  
+- **Test port:** On the Firewall page, use "Test port reachability" to check from the controller whether a given port on an agent is reachable (e.g. confirm a port is blocked after applying rules).  
 
 ### Blocklist
 Block connections from specific IP addresses before proxying.
@@ -289,8 +306,11 @@ nekoproxy/
 ├── shared/
 ├── build/
 ├── build-docker.sh
+├── build-docker-alpine.sh   # Alpine (musl) Linux build
 ├── install-agent.sh
 ├── install-controller.sh
+├── dist/windows/install-controller.ps1  # Windows: register controller as service
+├── dist/windows/install-agent.ps1      # Windows: register agent as service
 ├── update-agent.sh
 ├── update-controller.sh
 └── requirements.txt

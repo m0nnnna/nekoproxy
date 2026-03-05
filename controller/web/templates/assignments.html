@@ -34,7 +34,7 @@
                 <select name="agent_id" class="neko-input w-full">
                     <option value="">All Agents (Global)</option>
                     {% for agent in agents %}
-                    <option value="{{ agent.id }}">{{ agent.hostname }} ({{ agent.wireguard_ip }})</option>
+                    <option value="{{ agent.id }}">{{ agent.hostname }} ({{ agent.wireguard_ip or 'internal' }})</option>
                     {% endfor %}
                 </select>
             </div>

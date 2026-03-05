@@ -27,6 +27,7 @@ a = Analysis(
         'agent.core.config_sync',
         'agent.core.stats_reporter',
         'agent.core.firewall',
+        'agent.core.firewall_windows',
         'agent.core.control_api',
         'shared',
         'shared.models',

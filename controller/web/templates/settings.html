@@ -93,7 +93,7 @@
                 <label class="flex items-center gap-2 cursor-pointer">
                     <input type="checkbox" name="agent_ids" value="{{ agent.id }}"
                            class="rounded border-neko-300 agent-checkbox">
-                    <span>{{ agent.hostname }} ({{ agent.wireguard_ip }})</span>
+                    <span>{{ agent.hostname }} ({{ agent.wireguard_ip or 'internal' }})</span>
                 </label>
                 {% endfor %}
             </div>

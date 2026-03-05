@@ -3,7 +3,7 @@
     <div class="mt-2 text-3xl font-extrabold text-neko-900">{{ stats.total_connections }}</div>
 </div>
 <div class="neko-stat-card bg-gradient-to-br from-red-50 to-red-100 border border-red-200">
-    <div class="text-sm font-semibold text-red-500">Auto blocked (24h)</div>
+    <div class="text-sm font-semibold text-red-500">Blocked (24h)</div>
     <div class="mt-2 text-3xl font-extrabold text-red-600">{{ stats.blocked_connections }}</div>
 </div>
 <div class="neko-stat-card bg-gradient-to-br from-paw-50 to-paw-100 border border-paw-200">
@@ -35,4 +35,8 @@
         {{ bytes }} B
         {% endif %}
     </div>
+</div>
+<div class="neko-stat-card bg-gradient-to-br from-orange-50 to-orange-100 border border-orange-200">
+    <div class="text-sm font-semibold text-orange-600">IPs auto-added to blocklist (24h)</div>
+    <div class="mt-2 text-3xl font-extrabold text-orange-700">{{ stats.auto_blocklist_count|default(0) }}</div>
 </div>

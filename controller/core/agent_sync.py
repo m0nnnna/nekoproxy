@@ -3,6 +3,7 @@
 import asyncio
 import logging
 from typing import Dict, List, Optional
+from urllib.parse import urlparse
 
 import httpx
 from sqlalchemy.orm import Session
@@ -15,23 +16,53 @@ logger = logging.getLogger(__name__)
 AGENT_API_PORT = 8002
 
 
+def get_agent_host(agent) -> Optional[str]:
+    """Return host (IP or hostname) to reach the agent, or None. From control_url or wireguard_ip."""
+    if getattr(agent, "control_url", None) and (agent.control_url or "").strip():
+        parsed = urlparse((agent.control_url or "").strip())
+        if parsed.hostname:
+            return parsed.hostname
+    if getattr(agent, "wireguard_ip", None) and agent.wireguard_ip:
+        return agent.wireguard_ip
+    return None
+
+
+def get_agent_base_url(agent) -> Optional[str]:
+    """Return base URL to reach agent control API, or None if unreachable.
+    Prefers control_url (e.g. http://127.0.0.1:8002 for same-machine/Windows agents), else wireguard_ip:8002.
+    """
+    if getattr(agent, "control_url", None) and (agent.control_url or "").strip():
+        base = (agent.control_url or "").strip().rstrip("/")
+        if base:
+            return base
+    if getattr(agent, "wireguard_ip", None) and agent.wireguard_ip:
+        return f"http://{agent.wireguard_ip}:{AGENT_API_PORT}"
+    return None
+
+
 def _get_agents_to_sync(db: Session, agent_ids: Optional[List[int]] = None):
-    """Return list of agents to sync: if agent_ids given, those agents; else all healthy."""
+    """Return list of agents to sync: if agent_ids given, those agents; else all agents.
+    Only includes agents that are reachable (have wireguard_ip or control_url).
+    Uses get_all() so the sync count reflects every reachable agent, not just healthy ones.
+    """
     agent_repo = AgentRepository(db)
     if agent_ids:
         agents = [agent_repo.get_by_id(aid) for aid in agent_ids]
         agents = [a for a in agents if a]
     else:
-        agents = agent_repo.get_healthy()
-    return agents
+        agents = agent_repo.get_all()
+    return [a for a in agents if get_agent_base_url(a)]
 
 
 async def trigger_sync_all_agents(db: Session, agent_ids: Optional[List[int]] = None) -> Dict[str, int]:
-    """POST /trigger-sync to healthy agents. If agent_ids is set, only those agents; else all healthy. Returns {"success": n, "failed": n}."""
+    """POST /trigger-sync to reachable agents (wireguard_ip or control_url)."""
     agents = _get_agents_to_sync(db, agent_ids)
 
     async def trigger_one(agent):
-        url = f"http://{agent.wireguard_ip}:{AGENT_API_PORT}/trigger-sync"
+        base = get_agent_base_url(agent)
+        if not base:
+            return False
+        url = f"{base.rstrip('/')}/trigger-sync"
         try:
             async with httpx.AsyncClient(timeout=5.0) as client:
                 r = await client.post(url)

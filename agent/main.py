@@ -16,6 +16,7 @@ from agent.core.heartbeat import HeartbeatSender
 from agent.core.config_sync import ConfigSync
 from agent.core.stats_reporter import StatsReporter
 from agent.core.firewall import FirewallManager
+from agent.core.firewall_windows import WindowsFirewallManager
 from agent.core.control_api import ControlAPI
 from agent.core.email_proxy import EmailProxyManager
 from agent.core.email_stats import EmailStatsCollector
@@ -65,7 +66,7 @@ class NekoProxyAgent:
             self._geo_lookup = GeoLookup()
 
         # Proxy managers (TCP: scraper detection + rate limit + geo + idle timeout; UDP: same)
-        listen_ip = settings.wireguard_ip if getattr(settings, "listen_on_wireguard_only", False) else settings.listen_ip
+        listen_ip = (settings.wireguard_ip if getattr(settings, "listen_on_wireguard_only", False) and settings.wireguard_ip else settings.listen_ip)
         self._tcp_manager = TCPProxyManager(
             on_connection=self._on_connection,
             scraper_ua_patterns=DEFAULT_SCRAPER_UA_PATTERNS,
@@ -81,8 +82,8 @@ class NekoProxyAgent:
             geo_lookup=self._geo_lookup,
         )
 
-        # Firewall manager
-        self._firewall_manager = FirewallManager()
+        # Firewall manager (Linux iptables or Windows Firewall)
+        self._firewall_manager = WindowsFirewallManager() if sys.platform == "win32" else FirewallManager()
 
         # Email proxy manager
         self._email_manager = EmailProxyManager()
@@ -108,7 +109,7 @@ class NekoProxyAgent:
 
     async def _on_auto_block(self, ip: str, reason: str, event_type: str):
         """Called by SecurityMonitor when an IP should be auto-blocked (aggressive firewall).
-        Blocks locally (proxy + iptables) and reports to controller so blocklist syncs to all agents.
+        Blocks locally (proxy + firewall) and reports to controller so blocklist syncs to all agents.
         """
         if not self.agent_id:
             return
@@ -149,7 +150,7 @@ class NekoProxyAgent:
         self._tcp_manager.update_blocklist(list(self._current_blocklist))
         self._udp_manager.update_blocklist(list(self._current_blocklist))
 
-        # Sync firewall blocklist chain (aggressive: drop by IP in iptables)
+        # Sync firewall blocklist (iptables on Linux, Windows Firewall on Windows)
         await self._firewall_manager.sync_blocklist_ips(list(self._current_blocklist))
 
         # Convert services to dict format (no change to blocklist here)
@@ -169,7 +170,7 @@ class NekoProxyAgent:
         await self._tcp_manager.sync_proxies(services)
         await self._udp_manager.sync_proxies(services)
 
-        # Sync firewall rules (controller-defined port allow/block per interface)
+        # Sync firewall rules (controller-defined port allow/block)
         await self._firewall_manager.sync_rules(config.firewall_rules)
 
         # Geo filtering and idle timeout (from controller config)
@@ -186,12 +187,13 @@ class NekoProxyAgent:
         )
         self._udp_manager.set_idle_timeout(getattr(config, "idle_connection_timeout_seconds", 0) or 0)
 
-        # Auto-generated baseline: public = default-deny (only proxy ports + established), WG = allow
+        # Auto-generated baseline: public = restrictive (only proxy ports), private/WG = permissive
         allowed_ports = [(s.listen_port, s.protocol.value) for s in config.services]
         await self._firewall_manager.apply_baseline(
             allowed_ports,
             harden_public=settings.harden_public_interface,
             allow_wg=settings.allow_wireguard_freedom,
+            allow_dangerous_ports_on_public=getattr(config, "internal", False),
         )
 
         # Apply email config if present and email proxy is deployed
@@ -266,10 +268,15 @@ class NekoProxyAgent:
         """Register with the controller."""
         reg_data = {
             "hostname": settings.hostname,
-            "wireguard_ip": settings.wireguard_ip,
             "public_ip": settings.public_ip,
             "version": settings.version,
         }
+        if settings.wireguard_ip:
+            reg_data["wireguard_ip"] = settings.wireguard_ip
+        else:
+            reg_data["wireguard_ip"] = None  # Internal agent (no WireGuard)
+        if getattr(settings, "control_url", None) and (settings.control_url or "").strip():
+            reg_data["control_url"] = (settings.control_url or "").strip().rstrip("/")
         if getattr(settings, "agent_secret", None):
             reg_data["agent_secret"] = settings.agent_secret
 
@@ -298,7 +305,7 @@ class NekoProxyAgent:
         logger.info("=" * 70)
         logger.info("NekoProxy Agent Starting")
         logger.info(f"  Hostname: {settings.hostname}")
-        logger.info(f"  WireGuard IP: {settings.wireguard_ip}")
+        logger.info(f"  WireGuard IP: {settings.wireguard_ip or '(internal - none)'}")
         logger.info(f"  Controller: {settings.controller_url}")
         logger.info("=" * 70)
 
@@ -309,7 +316,7 @@ class NekoProxyAgent:
 
         self._running = True
 
-        # Initialize firewall manager
+        # Initialize firewall manager (iptables on Linux, Windows Firewall on Windows; requires admin on Windows)
         await self._firewall_manager.initialize()
 
         # Initialize stats reporter
@@ -352,9 +359,10 @@ class NekoProxyAgent:
         )
         await self._security_monitor.start()
 
-        # Start iptables firewall stats monitor
-        self._iptables_monitor = IptablesMonitor(self.agent_id)
-        await self._iptables_monitor.start()
+        # Start iptables firewall stats monitor (Linux only)
+        if sys.platform != "win32":
+            self._iptables_monitor = IptablesMonitor(self.agent_id)
+            await self._iptables_monitor.start()
 
         logger.info("=" * 70)
         logger.info("NekoProxy Agent running. Press Ctrl+C to stop.")

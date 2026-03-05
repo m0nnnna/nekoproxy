@@ -1,13 +1,22 @@
+import asyncio
+
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from controller.config import settings as controller_settings
 from controller.database.database import get_db
 from controller.database.repositories import AgentRepository, GlobalSettingsRepository
 from controller.core.agent_manager import AgentManager
+from controller.core.agent_sync import get_agent_host
 from shared.models import AgentRegistration, AgentHeartbeat, AgentConfig, AgentStatus
 
 router = APIRouter()
+
+
+class TestPortResponse(BaseModel):
+    reachable: bool
+    message: str
 
 
 @router.post("/register", response_model=AgentStatus)
@@ -119,3 +128,31 @@ def delete_agent(agent_id: int, db: Session = Depends(get_db)):
     if not repo.delete(agent_id):
         raise HTTPException(status_code=404, detail="Agent not found")
     return {"status": "deleted", "agent_id": agent_id}
+
+
+@router.get("/{agent_id}/test-port", response_model=TestPortResponse)
+async def test_agent_port(agent_id: int, port: int, db: Session = Depends(get_db)):
+    """Test TCP connectivity to a port on the agent (e.g. to verify firewall blocking).
+    Connects from the controller to agent host:port. Use to confirm a port is blocked or reachable.
+    """
+    if port < 1 or port > 65535:
+        return TestPortResponse(reachable=False, message="Port must be 1-65535")
+    repo = AgentRepository(db)
+    agent = repo.get_by_id(agent_id)
+    if not agent:
+        raise HTTPException(status_code=404, detail="Agent not found")
+    host = get_agent_host(agent)
+    if not host:
+        return TestPortResponse(
+            reachable=False,
+            message="Agent has no WireGuard IP or control_url; cannot determine host to test.",
+        )
+    try:
+        await asyncio.wait_for(asyncio.open_connection(host, port), timeout=3.0)
+        return TestPortResponse(reachable=True, message=f"Port {port} on {agent.hostname} ({host}) is reachable.")
+    except asyncio.TimeoutError:
+        return TestPortResponse(reachable=False, message=f"Connection to {host}:{port} timed out (port may be blocked or closed).")
+    except ConnectionRefusedError:
+        return TestPortResponse(reachable=False, message=f"Connection to {host}:{port} refused (port closed or blocked).")
+    except OSError as e:
+        return TestPortResponse(reachable=False, message=f"Error: {e!s}")

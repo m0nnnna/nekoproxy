@@ -42,6 +42,11 @@ print_error() {
     echo -e "${RED}✗ $1${NC}"
 }
 
+# Detect init system: systemd (Ubuntu/Debian) or OpenRC (Alpine)
+use_systemd() {
+    command -v systemctl >/dev/null 2>&1 && systemctl list-units --type=service >/dev/null 2>&1
+}
+
 # Check if running as root
 check_root() {
     if [[ $EUID -ne 0 ]]; then
@@ -93,20 +98,15 @@ prompt_config() {
         exit 1
     fi
 
-    # WireGuard IP
+    # WireGuard IP (optional for internal agents)
     DEFAULT_WG_IP=$(get_default_wireguard_ip)
     echo ""
-    echo "Enter this agent's WireGuard IP address"
+    echo "Enter this agent's WireGuard IP (leave blank for internal agent — no VPN, sync/push from controller need NEKO_AGENT_CONTROL_URL)"
     if [[ -n "$DEFAULT_WG_IP" ]]; then
         read -p "WireGuard IP [$DEFAULT_WG_IP]: " WIREGUARD_IP
         WIREGUARD_IP="${WIREGUARD_IP:-$DEFAULT_WG_IP}"
     else
-        read -p "WireGuard IP: " WIREGUARD_IP
-    fi
-
-    if [[ -z "$WIREGUARD_IP" ]]; then
-        print_error "WireGuard IP is required"
-        exit 1
+        read -p "WireGuard IP (or Enter for internal): " WIREGUARD_IP
     fi
 
     # Hostname
@@ -124,7 +124,7 @@ prompt_config() {
     # Summary
     print_header "Configuration Summary"
     echo "  Controller URL: $CONTROLLER_URL"
-    echo "  WireGuard IP:   $WIREGUARD_IP"
+    echo "  WireGuard IP:   ${WIREGUARD_IP:-<internal>}"
     echo "  Hostname:       $AGENT_HOSTNAME"
     echo "  Public IP:      ${PUBLIC_IP:-auto-detect}"
     echo ""
@@ -169,10 +169,12 @@ create_config() {
 NEKO_AGENT_CONTROLLER_URL=$CONTROLLER_URL
 
 # Agent identification
-NEKO_AGENT_WIREGUARD_IP=$WIREGUARD_IP
 NEKO_AGENT_HOSTNAME=$AGENT_HOSTNAME
 EOF
 
+    if [[ -n "$WIREGUARD_IP" ]]; then
+        echo "NEKO_AGENT_WIREGUARD_IP=$WIREGUARD_IP" >> "$CONFIG_FILE"
+    fi
     if [[ -n "$PUBLIC_IP" ]]; then
         echo "NEKO_AGENT_PUBLIC_IP=$PUBLIC_IP" >> "$CONFIG_FILE"
     fi
@@ -183,11 +185,12 @@ EOF
     print_success "Created $CONFIG_FILE"
 }
 
-# Create systemd service
+# Create systemd or OpenRC service (Alpine uses OpenRC)
 create_service() {
-    print_header "Creating systemd service..."
+    if use_systemd; then
+        print_header "Creating systemd service..."
 
-    cat > "/etc/systemd/system/$SERVICE_NAME.service" << EOF
+        cat > "/etc/systemd/system/$SERVICE_NAME.service" << EOF
 [Unit]
 Description=NekoProxy Agent
 Documentation=https://github.com/your-repo/nekoproxy
@@ -211,8 +214,6 @@ StandardError=journal
 SyslogIdentifier=$SERVICE_NAME
 
 # Security hardening
-# Note: ProtectSystem is disabled to allow email proxy deployment (apt-get, postfix config)
-# If you don't need email proxy, you can change to ProtectSystem=strict
 NoNewPrivileges=false
 ProtectSystem=false
 ProtectHome=true
@@ -222,29 +223,58 @@ PrivateTmp=true
 WantedBy=multi-user.target
 EOF
 
-    print_success "Created /etc/systemd/system/$SERVICE_NAME.service"
+        print_success "Created /etc/systemd/system/$SERVICE_NAME.service"
+        systemctl daemon-reload
+        print_success "Reloaded systemd"
+    else
+        print_header "Creating OpenRC service (Alpine)..."
 
-    # Reload systemd
-    systemctl daemon-reload
-    print_success "Reloaded systemd"
+        cat > "/etc/init.d/$SERVICE_NAME" << INITD
+#!/sbin/openrc-run
+
+description="NekoProxy Agent"
+command="/bin/sh"
+command_args="-c 'set -a; [ -r $CONFIG_FILE ] && . $CONFIG_FILE; set +a; exec $INSTALL_DIR/nekoproxy-agent'"
+command_background="yes"
+pidfile="/run/nekoproxy-agent.pid"
+output_log="/var/log/nekoproxy-agent.log"
+error_log="/var/log/nekoproxy-agent.log"
+
+depend() {
+    need net
+}
+INITD
+        chmod +x "/etc/init.d/$SERVICE_NAME"
+        print_success "Created /etc/init.d/$SERVICE_NAME"
+    fi
 }
 
 # Enable and start service
 start_service() {
     print_header "Starting service..."
 
-    systemctl enable "$SERVICE_NAME"
-    print_success "Enabled $SERVICE_NAME to start on boot"
-
-    systemctl start "$SERVICE_NAME"
-    print_success "Started $SERVICE_NAME"
-
-    # Wait a moment and check status
-    sleep 2
-    if systemctl is-active --quiet "$SERVICE_NAME"; then
-        print_success "Service is running!"
+    if use_systemd; then
+        systemctl enable "$SERVICE_NAME"
+        print_success "Enabled $SERVICE_NAME to start on boot"
+        systemctl start "$SERVICE_NAME"
+        print_success "Started $SERVICE_NAME"
+        sleep 2
+        if systemctl is-active --quiet "$SERVICE_NAME"; then
+            print_success "Service is running!"
+        else
+            print_warning "Service may have issues. Check: journalctl -u $SERVICE_NAME -f"
+        fi
     else
-        print_warning "Service may have issues. Check: journalctl -u $SERVICE_NAME -f"
+        rc-update add "$SERVICE_NAME" default 2>/dev/null || true
+        print_success "Enabled $SERVICE_NAME to start on boot"
+        "/etc/init.d/$SERVICE_NAME" start
+        print_success "Started $SERVICE_NAME"
+        sleep 2
+        if "/etc/init.d/$SERVICE_NAME" status >/dev/null 2>&1; then
+            print_success "Service is running!"
+        else
+            print_warning "Service may have issues. Check: /var/log/nekoproxy-agent.log"
+        fi
     fi
 }
 
@@ -256,10 +286,17 @@ show_instructions() {
     echo "The NekoProxy agent has been installed and started."
     echo ""
     echo "Useful commands:"
-    echo "  ${CYAN}systemctl status $SERVICE_NAME${NC}    - Check service status"
-    echo "  ${CYAN}systemctl restart $SERVICE_NAME${NC}   - Restart the agent"
-    echo "  ${CYAN}systemctl stop $SERVICE_NAME${NC}      - Stop the agent"
-    echo "  ${CYAN}journalctl -u $SERVICE_NAME -f${NC}    - View live logs"
+    if use_systemd; then
+        echo "  ${CYAN}systemctl status $SERVICE_NAME${NC}    - Check service status"
+        echo "  ${CYAN}systemctl restart $SERVICE_NAME${NC}   - Restart the agent"
+        echo "  ${CYAN}systemctl stop $SERVICE_NAME${NC}      - Stop the agent"
+        echo "  ${CYAN}journalctl -u $SERVICE_NAME -f${NC}    - View live logs"
+    else
+        echo "  ${CYAN}rc-service $SERVICE_NAME status${NC}   - Check service status"
+        echo "  ${CYAN}rc-service $SERVICE_NAME restart${NC}  - Restart the agent"
+        echo "  ${CYAN}rc-service $SERVICE_NAME stop${NC}      - Stop the agent"
+        echo "  ${CYAN}tail -f /var/log/nekoproxy-agent.log${NC} - View logs"
+    fi
     echo ""
     echo "Configuration file: ${CYAN}$CONFIG_FILE${NC}"
     echo "Binary location:    ${CYAN}$INSTALL_DIR/$BINARY_NAME${NC}"
@@ -272,23 +309,26 @@ show_instructions() {
 uninstall() {
     print_header "Uninstalling NekoProxy Agent..."
 
-    # Stop and disable service
-    if systemctl is-active --quiet "$SERVICE_NAME" 2>/dev/null; then
-        systemctl stop "$SERVICE_NAME"
-        print_success "Stopped service"
+    if use_systemd; then
+        if systemctl is-active --quiet "$SERVICE_NAME" 2>/dev/null; then
+            systemctl stop "$SERVICE_NAME"
+            print_success "Stopped service"
+        fi
+        if systemctl is-enabled --quiet "$SERVICE_NAME" 2>/dev/null; then
+            systemctl disable "$SERVICE_NAME"
+            print_success "Disabled service"
+        fi
+        rm -f "/etc/systemd/system/$SERVICE_NAME.service"
+        systemctl daemon-reload
+    else
+        "/etc/init.d/$SERVICE_NAME" stop 2>/dev/null || true
+        rc-update del "$SERVICE_NAME" default 2>/dev/null || true
+        rm -f "/etc/init.d/$SERVICE_NAME"
+        print_success "Stopped and removed OpenRC service"
     fi
 
-    if systemctl is-enabled --quiet "$SERVICE_NAME" 2>/dev/null; then
-        systemctl disable "$SERVICE_NAME"
-        print_success "Disabled service"
-    fi
-
-    # Remove files
-    rm -f "/etc/systemd/system/$SERVICE_NAME.service"
     rm -f "$CONFIG_FILE"
     rm -rf "$INSTALL_DIR"
-
-    systemctl daemon-reload
 
     print_success "NekoProxy Agent has been uninstalled"
 }

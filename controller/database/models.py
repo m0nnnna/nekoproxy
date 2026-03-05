@@ -11,7 +11,8 @@ class Agent(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     hostname = Column(String(255), nullable=False)
-    wireguard_ip = Column(String(45), unique=True, nullable=False)
+    wireguard_ip = Column(String(45), unique=True, nullable=True)  # None = internal agent (no WireGuard)
+    control_url = Column(String(255), nullable=True)  # Optional base URL for sync/push when no WireGuard (e.g. http://127.0.0.1:8002)
     public_ip = Column(String(45), nullable=True)
     status = Column(SQLEnum(HealthStatus), default=HealthStatus.UNKNOWN)
     last_heartbeat = Column(DateTime, nullable=True)
@@ -19,6 +20,7 @@ class Agent(Base):
     cpu_percent = Column(Float, default=0.0)
     memory_percent = Column(Float, default=0.0)
     version = Column(String(20), default="2.0.0")
+    internal = Column(Boolean, default=False)  # Internal agent: looser port control (dangerous ports allowed)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -70,6 +72,8 @@ class BlocklistEntry(Base):
     ip = Column(String(45), unique=True, nullable=False, index=True)
     reason = Column(Text, nullable=True)
     added_at = Column(DateTime, default=datetime.utcnow)
+    # 'manual' = added via UI/API; 'agent_report' = auto-added when agent reported (e.g. after local auto-block). Nullable for existing rows.
+    source = Column(String(20), default="manual", nullable=True)
 
 
 class ConnectionStat(Base):

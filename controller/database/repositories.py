@@ -11,12 +11,13 @@ class AgentRepository:
     def __init__(self, db: Session):
         self.db = db
 
-    def create(self, hostname: str, wireguard_ip: str, public_ip: Optional[str] = None, version: str = "2.0.0") -> Agent:
+    def create(self, hostname: str, wireguard_ip: Optional[str] = None, public_ip: Optional[str] = None, version: str = "2.0.0", control_url: Optional[str] = None) -> Agent:
         agent = Agent(
             hostname=hostname,
             wireguard_ip=wireguard_ip,
             public_ip=public_ip,
             version=version,
+            control_url=control_url,
             status=HealthStatus.HEALTHY,
             last_heartbeat=datetime.utcnow()
         )
@@ -28,8 +29,17 @@ class AgentRepository:
     def get_by_id(self, agent_id: int) -> Optional[Agent]:
         return self.db.query(Agent).filter(Agent.id == agent_id).first()
 
-    def get_by_wireguard_ip(self, wireguard_ip: str) -> Optional[Agent]:
+    def get_by_wireguard_ip(self, wireguard_ip: Optional[str]) -> Optional[Agent]:
+        if wireguard_ip is None or wireguard_ip == "":
+            return None
         return self.db.query(Agent).filter(Agent.wireguard_ip == wireguard_ip).first()
+
+    def get_by_hostname_internal(self, hostname: str) -> Optional[Agent]:
+        """Return an existing internal agent (wireguard_ip is null) with this hostname for re-registration."""
+        return self.db.query(Agent).filter(
+            Agent.hostname == hostname,
+            Agent.wireguard_ip.is_(None)
+        ).first()
 
     def get_all(self) -> List[Agent]:
         return self.db.query(Agent).all()
@@ -54,6 +64,14 @@ class AgentRepository:
         if agent:
             agent.status = HealthStatus.UNHEALTHY
             self.db.commit()
+        return agent
+
+    def update_internal(self, agent_id: int, internal: bool) -> Optional[Agent]:
+        agent = self.get_by_id(agent_id)
+        if agent:
+            agent.internal = bool(internal)
+            self.db.commit()
+            self.db.refresh(agent)
         return agent
 
     def delete(self, agent_id: int) -> bool:
@@ -191,12 +209,20 @@ class BlocklistRepository:
     def __init__(self, db: Session):
         self.db = db
 
-    def add(self, ip: str, reason: Optional[str] = None) -> BlocklistEntry:
-        entry = BlocklistEntry(ip=ip, reason=reason)
+    def add(self, ip: str, reason: Optional[str] = None, source: str = "manual") -> BlocklistEntry:
+        entry = BlocklistEntry(ip=ip, reason=reason, source=source)
         self.db.add(entry)
         self.db.commit()
         self.db.refresh(entry)
         return entry
+
+    def get_auto_added_count(self, hours: Optional[int] = 24) -> int:
+        """Count IPs that were auto-added to the blocklist (reported by agents). Optional hours = last N hours; None = all time."""
+        q = self.db.query(BlocklistEntry).filter(BlocklistEntry.source == "agent_report")
+        if hours is not None:
+            cutoff = datetime.utcnow() - timedelta(hours=hours)
+            q = q.filter(BlocklistEntry.added_at >= cutoff)
+        return q.count()
 
     def remove(self, ip: str) -> bool:
         entry = self.db.query(BlocklistEntry).filter(BlocklistEntry.ip == ip).first()
@@ -294,6 +320,16 @@ class ConnectionStatRepository:
 
     def get_recent(self, hours: int = 24, limit: int = 100) -> List[ConnectionStat]:
         cutoff = datetime.utcnow() - timedelta(hours=hours)
+        return self.db.query(ConnectionStat).options(
+            joinedload(ConnectionStat.service),
+            joinedload(ConnectionStat.agent),
+        ).filter(
+            ConnectionStat.timestamp >= cutoff
+        ).order_by(ConnectionStat.timestamp.desc()).limit(limit).all()
+
+    def get_recent_seconds(self, seconds: int = 60, limit: int = 200) -> List[ConnectionStat]:
+        """Connections in the last N seconds (for live view)."""
+        cutoff = datetime.utcnow() - timedelta(seconds=seconds)
         return self.db.query(ConnectionStat).options(
             joinedload(ConnectionStat.service),
             joinedload(ConnectionStat.agent),

@@ -11,10 +11,17 @@ def get_hostname() -> str:
     return socket.gethostname()
 
 
+def _agent_config_dir() -> Path:
+    """Directory for agent config file. On Windows (frozen exe), use exe dir; else cwd."""
+    if getattr(sys, "frozen", False) and getattr(sys, "executable", None):
+        return Path(sys.executable).resolve().parent
+    return Path.cwd()
+
+
 class AgentSettings(BaseSettings):
     # Agent identification
     hostname: str = get_hostname()
-    wireguard_ip: str = "10.0.0.1"  # Must be configured
+    wireguard_ip: Optional[str] = None  # Optional for internal agents (no WireGuard)
     public_ip: Optional[str] = None
     version: str = "2.0.0"
 
@@ -31,6 +38,8 @@ class AgentSettings(BaseSettings):
 
     # Control API (for receiving push notifications from controller)
     api_port: int = 8002
+    # Optional base URL for controller to reach this agent (e.g. http://127.0.0.1:8002 when agent and controller on same machine)
+    control_url: Optional[str] = None
 
     # Stats reporting
     stats_batch_size: int = 100
@@ -73,7 +82,8 @@ class AgentSettings(BaseSettings):
 
     class Config:
         env_prefix = "NEKO_AGENT_"
-        env_file = ".env"
+        # Load .env from cwd first, then agent.env / .env from exe dir (Windows) so exe-dir overrides
+        env_file = [".env", str(_agent_config_dir() / "agent.env"), str(_agent_config_dir() / ".env")]
 
     @model_validator(mode="after")
     def apply_paranoid_preset(self):

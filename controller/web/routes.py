@@ -27,7 +27,7 @@ from controller.database.repositories import (
     GlobalSettingsRepository,
 )
 from controller.core.email_manager import EmailManager
-from controller.core.agent_sync import trigger_sync_all_agents
+from controller.core.agent_sync import trigger_sync_all_agents, get_agent_base_url, get_agent_host
 from shared.models.common import Protocol, FirewallAction, AlertSeverity, AlertType, EmailBlocklistType
 
 # Ensure templates directory exists
@@ -43,9 +43,11 @@ async def dashboard(request: Request, db: Session = Depends(get_db)):
     """Main dashboard page."""
     agent_repo = AgentRepository(db)
     stat_repo = ConnectionStatRepository(db)
+    blocklist_repo = BlocklistRepository(db)
 
     agents = agent_repo.get_all()
     stats_summary = stat_repo.get_stats_summary(hours=24)
+    stats_summary["auto_blocklist_count"] = blocklist_repo.get_auto_added_count(hours=24)
     recent_connections = stat_repo.get_recent(hours=1, limit=10)
 
     return templates.TemplateResponse("dashboard.html", {
@@ -115,13 +117,19 @@ async def push_agent_update(
     agent = agent_repo.get_by_id(agent_id)
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
+    base_url = get_agent_base_url(agent)
+    if not base_url:
+        return HTMLResponse(
+            '<span class="text-amber-600">Agent has no WireGuard IP or control_url: push update not available.</span>',
+            status_code=400
+        )
     path = _get_uploaded_agent_path()
     if not path.is_file():
         return HTMLResponse(
             '<span class="text-red-500">No agent binary uploaded. Upload one above first.</span>',
             status_code=400
         )
-    url = f"http://{agent.wireguard_ip}:8002/update-binary"
+    url = f"{base_url.rstrip('/')}/update-binary"
     try:
         with open(path, "rb") as f:
             body = f.read()
@@ -140,6 +148,29 @@ async def push_agent_update(
             f'<span class="text-red-500">Failed: {e!s}</span>',
             status_code=500
         )
+
+
+@router.post("/agents/{agent_id}/internal", response_class=HTMLResponse)
+async def set_agent_internal(
+    request: Request,
+    agent_id: int,
+    db: Session = Depends(get_db),
+):
+    """Toggle internal flag for an agent (looser port control: all proxy ports allowed on public)."""
+    form = await request.form()
+    internal = form.get("internal") in ("on", "1", "true", "yes")
+    repo = AgentRepository(db)
+    agent = repo.update_internal(agent_id, internal)
+    if not agent:
+        raise HTTPException(status_code=404, detail="Agent not found")
+    await trigger_sync_all_agents(db, agent_ids=[agent_id])
+    # Return small fragment for the cell so the row updates
+    return HTMLResponse(
+        f'<label class="inline-flex items-center gap-1">'
+        f'<input type="checkbox" name="internal" value="on" '
+        f'hx-post="/agents/{agent_id}/internal" hx-trigger="change" hx-swap="outerHTML" hx-target="closest label" '
+        f'{"checked" if agent.internal else ""}> Internal</label>'
+    )
 
 
 @router.delete("/agents/{agent_id}", response_class=HTMLResponse)
@@ -426,18 +457,21 @@ async def remove_blocklist_htmx(ip: str, db: Session = Depends(get_db)):
 
 @router.post("/blocklist/apply", response_class=HTMLResponse)
 async def apply_blocklist_htmx(request: Request, db: Session = Depends(get_db)):
-    """Push config sync to all healthy agents."""
+    """Push config sync to all reachable agents (wireguard_ip or control_url)."""
     agent_repo = AgentRepository(db)
-    agents = agent_repo.get_healthy()
+    agents = [a for a in agent_repo.get_all() if get_agent_base_url(a)]
 
     if not agents:
         return HTMLResponse(
-            '<div class="text-yellow-500">No healthy agents to sync</div>',
+            '<div class="text-yellow-500">No reachable agents to sync (set WireGuard IP or control_url)</div>',
             status_code=200
         )
 
     async def trigger_agent_sync(agent):
-        url = f"http://{agent.wireguard_ip}:8002/trigger-sync"
+        base = get_agent_base_url(agent)
+        url = f"{base.rstrip('/')}/trigger-sync" if base else None
+        if not url:
+            return False
         try:
             async with httpx.AsyncClient(timeout=5.0) as client:
                 response = await client.post(url)
@@ -465,12 +499,36 @@ async def apply_blocklist_htmx(request: Request, db: Session = Depends(get_db)):
         return HTMLResponse(f'<div class="text-yellow-500">Synced {success}, failed {failed} agent(s)</div>')
 
 
+@router.get("/live", response_class=HTMLResponse)
+async def live_page(request: Request, db: Session = Depends(get_db)):
+    """Live view: connections in the last 60 seconds, auto-refreshing."""
+    stat_repo = ConnectionStatRepository(db)
+    connections = stat_repo.get_recent_seconds(seconds=60, limit=200)
+    return templates.TemplateResponse("live.html", {
+        "request": request,
+        "connections": connections,
+        "active_page": "live"
+    })
+
+
+@router.get("/partials/live-connections", response_class=HTMLResponse)
+async def live_connections_partial(request: Request, seconds: int = 60, db: Session = Depends(get_db)):
+    """Partial for live connection list (HTMX poll every 2s)."""
+    stat_repo = ConnectionStatRepository(db)
+    connections = stat_repo.get_recent_seconds(seconds=seconds, limit=200)
+    return templates.TemplateResponse("partials/live_connections.html", {
+        "request": request,
+        "connections": connections,
+    })
+
+
 @router.get("/stats", response_class=HTMLResponse)
 async def stats_page(request: Request, period: str = "24h", db: Session = Depends(get_db)):
     """Statistics page with time range selection."""
     from controller.database.repositories import EmailStatRepository, FirewallStatRepository
 
     stat_repo = ConnectionStatRepository(db)
+    blocklist_repo = BlocklistRepository(db)
     email_stat_repo = EmailStatRepository(db)
     firewall_stat_repo = FirewallStatRepository(db)
 
@@ -479,6 +537,7 @@ async def stats_page(request: Request, period: str = "24h", db: Session = Depend
     hours = period_map.get(period, 24)
 
     summary = stat_repo.get_stats_summary(hours=hours)
+    summary["auto_blocklist_count"] = blocklist_repo.get_auto_added_count(hours=hours)
     email_summary = email_stat_repo.get_stats_summary(hours=hours)
     firewall_summary = firewall_stat_repo.get_stats_summary(hours=hours)
     # Logs always show data based on selected period (up to 100 entries)
@@ -615,13 +674,13 @@ async def toggle_firewall_rule_htmx(request: Request, rule_id: int, db: Session 
 
 @router.post("/firewall/apply", response_class=HTMLResponse)
 async def apply_firewall_rules_htmx(request: Request, db: Session = Depends(get_db)):
-    """Push config sync to all healthy agents."""
+    """Push config sync to all reachable agents (wireguard_ip or control_url)."""
     agent_repo = AgentRepository(db)
-    agents = agent_repo.get_healthy()
+    agents = [a for a in agent_repo.get_all() if get_agent_base_url(a)]
 
     if not agents:
         return HTMLResponse(
-            '<div class="text-yellow-500">No healthy agents to sync</div>',
+            '<div class="text-yellow-500">No reachable agents to sync (set WireGuard IP or control_url)</div>',
             status_code=200
         )
 
@@ -630,7 +689,10 @@ async def apply_firewall_rules_htmx(request: Request, db: Session = Depends(get_
 
     async def trigger_agent_sync(agent):
         """Trigger sync on a single agent."""
-        url = f"http://{agent.wireguard_ip}:8002/trigger-sync"
+        base = get_agent_base_url(agent)
+        url = f"{base.rstrip('/')}/trigger-sync" if base else None
+        if not url:
+            return False
         try:
             async with httpx.AsyncClient(timeout=5.0) as client:
                 response = await client.post(url)
@@ -663,6 +725,43 @@ async def apply_firewall_rules_htmx(request: Request, db: Session = Depends(get_
         return HTMLResponse(
             f'<div class="text-yellow-500">Synced {results["success"]}, failed {results["failed"]} agent(s)</div>'
         )
+
+
+@router.post("/firewall/test-port", response_class=HTMLResponse)
+async def test_agent_port_htmx(request: Request, db: Session = Depends(get_db)):
+    """Test TCP connectivity to a port on an agent (verify firewall blocking). Returns HTML snippet."""
+    form = await request.form()
+    try:
+        agent_id = int(form.get("agent_id", 0))
+        port = int(form.get("port", 0))
+    except (TypeError, ValueError):
+        return HTMLResponse('<div class="text-red-500">Invalid agent or port.</div>')
+    if port < 1 or port > 65535:
+        return HTMLResponse('<div class="text-red-500">Port must be 1–65535.</div>')
+    agent_repo = AgentRepository(db)
+    agent = agent_repo.get_by_id(agent_id)
+    if not agent:
+        return HTMLResponse('<div class="text-red-500">Agent not found.</div>')
+    host = get_agent_host(agent)
+    if not host:
+        return HTMLResponse(
+            '<div class="text-amber-600">Agent has no WireGuard IP or control_url; cannot test.</div>'
+        )
+    try:
+        await asyncio.wait_for(asyncio.open_connection(host, port), timeout=3.0)
+        return HTMLResponse(
+            f'<div class="text-green-600">Port {port} on {agent.hostname} ({host}) is <strong>reachable</strong> (not blocked).</div>'
+        )
+    except asyncio.TimeoutError:
+        return HTMLResponse(
+            f'<div class="text-amber-600">Connection to {agent.hostname}:{port} timed out (port may be blocked or closed).</div>'
+        )
+    except ConnectionRefusedError:
+        return HTMLResponse(
+            f'<div class="text-green-600">Port {port} on {agent.hostname} is <strong>blocked/closed</strong> (connection refused).</div>'
+        )
+    except OSError as e:
+        return HTMLResponse(f'<div class="text-red-500">Error: {e!s}</div>')
 
 
 @router.get("/rules", response_class=HTMLResponse)
@@ -820,20 +919,23 @@ async def delete_rule_htmx(assignment_id: int, db: Session = Depends(get_db)):
 
 @router.post("/rules/apply", response_class=HTMLResponse)
 async def apply_rules_htmx(request: Request, db: Session = Depends(get_db)):
-    """Push config sync to all healthy agents (same as firewall apply)."""
+    """Push config sync to all reachable agents (wireguard_ip or control_url)."""
     agent_repo = AgentRepository(db)
-    agents = agent_repo.get_healthy()
+    agents = [a for a in agent_repo.get_all() if get_agent_base_url(a)]
 
     if not agents:
         return HTMLResponse(
-            '<div class="text-yellow-500">No healthy agents to sync</div>',
+            '<div class="text-yellow-500">No reachable agents to sync (set WireGuard IP or control_url)</div>',
             status_code=200
         )
 
     # Trigger sync on all agents in parallel
     async def trigger_agent_sync(agent):
         """Trigger sync on a single agent."""
-        url = f"http://{agent.wireguard_ip}:8002/trigger-sync"
+        base = get_agent_base_url(agent)
+        url = f"{base.rstrip('/')}/trigger-sync" if base else None
+        if not url:
+            return False
         try:
             async with httpx.AsyncClient(timeout=5.0) as client:
                 response = await client.post(url)
@@ -1024,12 +1126,14 @@ async def agents_status_partial(request: Request, db: Session = Depends(get_db))
 async def stats_summary_partial(request: Request, period: str = "24h", db: Session = Depends(get_db)):
     """Partial for stats summary updates."""
     stat_repo = ConnectionStatRepository(db)
+    blocklist_repo = BlocklistRepository(db)
 
     # Parse period to hours (None for lifetime)
     period_map = {"24h": 24, "7d": 168, "30d": 720, "lifetime": None}
     hours = period_map.get(period, 24)
 
     summary = stat_repo.get_stats_summary(hours=hours)
+    summary["auto_blocklist_count"] = blocklist_repo.get_auto_added_count(hours=hours)
     return templates.TemplateResponse("partials/stats_summary.html", {
         "request": request,
         "stats": summary

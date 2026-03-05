@@ -33,6 +33,7 @@
                     <th class="text-left">WireGuard IP</th>
                     <th class="text-left">Public IP</th>
                     <th class="text-left">Status</th>
+                    <th class="text-left">Internal</th>
                     <th class="text-left">Connections</th>
                     <th class="text-left">Last Heartbeat</th>
                     <th class="text-left">Actions</th>
@@ -43,7 +44,7 @@
                 <tr id="agent-{{ agent.id }}">
                     <td class="whitespace-nowrap text-sm text-neko-800">{{ agent.id }}</td>
                     <td class="whitespace-nowrap text-sm text-neko-900 font-semibold">{{ agent.hostname }}</td>
-                    <td class="whitespace-nowrap text-sm font-mono text-neko-500">{{ agent.wireguard_ip }}</td>
+                    <td class="whitespace-nowrap text-sm font-mono text-neko-500">{{ agent.wireguard_ip or 'internal' }}</td>
                     <td class="whitespace-nowrap text-sm font-mono text-neko-500">{{ agent.public_ip or '-' }}</td>
                     <td class="whitespace-nowrap">
                         {% if agent.status.value == 'healthy' %}
@@ -53,6 +54,13 @@
                         {% else %}
                         <span class="neko-badge neko-badge-low">Unknown</span>
                         {% endif %}
+                    </td>
+                    <td class="whitespace-nowrap text-sm">
+                        <label class="inline-flex items-center gap-1" title="Internal: allow all proxy ports on public (e.g. SSH/DB)">
+                            <input type="checkbox" name="internal" value="on"
+                                   hx-post="/agents/{{ agent.id }}/internal" hx-trigger="change" hx-swap="outerHTML" hx-target="closest label"
+                                   {% if agent.internal %}checked{% endif %}> Internal
+                        </label>
                     </td>
                     <td class="whitespace-nowrap text-sm text-neko-500">{{ agent.active_connections }}</td>
                     <td class="whitespace-nowrap text-sm text-neko-400">
@@ -64,7 +72,7 @@
                                     hx-target="#agent-update-status-{{ agent.id }}"
                                     hx-swap="innerHTML"
                                     hx-indicator="#agent-update-spinner-{{ agent.id }}"
-                                    {% if not has_uploaded_binary %}disabled title="Upload an agent binary first"{% endif %}
+                                    {% if not has_uploaded_binary %}disabled title="Upload an agent binary first"{% elif not agent.wireguard_ip %}disabled title="Internal agent: push update not available"{% endif %}
                                     class="neko-btn-success px-2 py-1 text-sm">
                                 Update
                             </button>
@@ -82,7 +90,7 @@
                 </tr>
                 {% else %}
                 <tr>
-                    <td colspan="8" class="text-center py-8 neko-empty">
+                    <td colspan="9" class="text-center py-8 neko-empty">
                         No agents registered yet (=^.^=) Start an agent to see it here!
                     </td>
                 </tr>

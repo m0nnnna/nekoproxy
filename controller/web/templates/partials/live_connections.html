@@ -1,0 +1,16 @@
+{% for conn in connections %}
+<tr>
+    <td class="whitespace-nowrap text-sm text-neko-400">{{ conn.timestamp.strftime('%H:%M:%S') }}</td>
+    <td class="whitespace-nowrap text-sm text-neko-500">{{ conn.agent.hostname if conn.agent else conn.agent_id }}</td>
+    <td class="whitespace-nowrap text-sm text-neko-700 font-medium">{{ conn.service.name if conn.service else ('(blocked)' if conn.status == 'blocked' else '-') }}</td>
+    <td class="whitespace-nowrap text-sm text-neko-900 font-medium">{{ conn.client_ip }}</td>
+    <td class="whitespace-nowrap text-sm">{{ conn.status }}</td>
+    <td class="whitespace-nowrap text-sm text-neko-500">{{ "%.1fs"|format(conn.duration) if conn.duration else '-' }}</td>
+    <td class="whitespace-nowrap text-sm text-neko-500">{{ conn.bytes_sent or 0 }}</td>
+    <td class="whitespace-nowrap text-sm text-neko-500">{{ conn.bytes_received or 0 }}</td>
+</tr>
+{% else %}
+<tr>
+    <td colspan="8" class="text-center py-6 text-neko-500">No connections in the last 60 seconds.</td>
+</tr>
+{% endfor %}

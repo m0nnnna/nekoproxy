@@ -61,6 +61,9 @@ class EmailManager:
         self.config_repo.update_deployment_status(config.id, EmailDeploymentStatus.DEPLOYING)
 
         try:
+            if not agent.wireguard_ip:
+                self.config_repo.update_deployment_status(config.id, EmailDeploymentStatus.FAILED)
+                return False, "Internal agent (no WireGuard IP): deploy not available"
             # Trigger deployment on agent via control API
             url = f"http://{agent.wireguard_ip}:8002/deploy-email"
 
@@ -542,7 +545,7 @@ class EmailManager:
             if not config.agent_id:
                 return None
             agent = self.agent_repo.get_by_id(config.agent_id)
-            if not agent:
+            if not agent or not agent.wireguard_ip:
                 return None
             url = f"http://{agent.wireguard_ip}:8002/trigger-email-sync"
             try:
@@ -567,7 +570,7 @@ class EmailManager:
     async def trigger_agent_sync(self, agent_id: int) -> bool:
         """Trigger email config sync on a specific agent."""
         agent = self.agent_repo.get_by_id(agent_id)
-        if not agent:
+        if not agent or not agent.wireguard_ip:
             return False
 
         url = f"http://{agent.wireguard_ip}:8002/trigger-email-sync"

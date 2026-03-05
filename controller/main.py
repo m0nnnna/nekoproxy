@@ -33,6 +33,62 @@ async def lifespan(app: FastAPI):
 
     # Create database tables
     Base.metadata.create_all(bind=engine)
+    # Add blocklist.source column if missing (for "IPs auto-added" stat)
+    try:
+        from sqlalchemy import text
+        with engine.connect() as conn:
+            conn.execute(text("ALTER TABLE blocklist ADD COLUMN source VARCHAR(20) DEFAULT 'manual'"))
+            conn.commit()
+        logger.info("Blocklist table: added source column")
+    except Exception as e:
+        if "duplicate column name" not in str(e).lower():
+            logger.warning("Blocklist migration (source column): %s", e)
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("ALTER TABLE agents ADD COLUMN internal BOOLEAN DEFAULT 0"))
+            conn.commit()
+        logger.info("Agents table: added internal column")
+    except Exception as e:
+        if "duplicate column name" not in str(e).lower():
+            logger.warning("Agents migration (internal column): %s", e)
+    # Make wireguard_ip nullable (for internal agents): SQLite requires table recreate
+    try:
+        with engine.connect() as conn:
+            r = conn.execute(text("PRAGMA table_info(agents)"))
+            rows = r.fetchall()
+            # Find wireguard_ip column: (cid, name, type, notnull, dflt_value, pk)
+            wg_notnull = None
+            for row in rows:
+                if row[1] == "wireguard_ip":
+                    wg_notnull = row[3]  # 1 = NOT NULL, 0 = nullable
+                    break
+            if wg_notnull == 1:
+                conn.execute(text("PRAGMA foreign_keys=OFF"))
+                conn.execute(text(
+                    "CREATE TABLE agents_new (id INTEGER NOT NULL PRIMARY KEY, hostname VARCHAR(255) NOT NULL, "
+                    "wireguard_ip VARCHAR(45), public_ip VARCHAR(45), status VARCHAR(20), last_heartbeat DATETIME, "
+                    "active_connections INTEGER, cpu_percent FLOAT, memory_percent FLOAT, version VARCHAR(20), "
+                    "internal BOOLEAN, created_at DATETIME, updated_at DATETIME)"
+                ))
+                conn.execute(text("CREATE UNIQUE INDEX ix_agents_wireguard_ip ON agents_new (wireguard_ip)"))
+                conn.execute(text("INSERT INTO agents_new SELECT id, hostname, wireguard_ip, public_ip, status, last_heartbeat, active_connections, cpu_percent, memory_percent, version, COALESCE(internal, 0), created_at, updated_at FROM agents"))
+                conn.execute(text("DROP TABLE agents"))
+                conn.execute(text("ALTER TABLE agents_new RENAME TO agents"))
+                conn.commit()
+                logger.info("Agents table: wireguard_ip now nullable")
+    except Exception as e:
+        if "no such table: agents" in str(e).lower():
+            pass  # Fresh DB
+        else:
+            logger.warning("Agents migration (wireguard_ip nullable): %s", e)
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("ALTER TABLE agents ADD COLUMN control_url VARCHAR(255)"))
+            conn.commit()
+        logger.info("Agents table: added control_url column")
+    except Exception as e:
+        if "duplicate column name" not in str(e).lower():
+            logger.warning("Agents migration (control_url): %s", e)
     logger.info("Database initialized")
 
     # Start health monitor

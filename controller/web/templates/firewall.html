@@ -27,6 +27,32 @@
     </p>
 </div>
 
+<!-- Test port (verify firewall blocking) -->
+<div class="neko-card p-4 mb-6 border-l-4 border-neko-400">
+    <h2 class="text-lg neko-subheader mb-2">Test port reachability</h2>
+    <p class="text-sm text-neko-600 mb-3">Check if a port on an agent is reachable from the controller (e.g. after applying firewall rules, confirm the port is blocked).</p>
+    <form hx-post="/firewall/test-port"
+          hx-target="#test-port-result"
+          hx-swap="innerHTML"
+          class="flex flex-wrap items-end gap-3">
+        <div>
+            <label class="neko-label block text-xs mb-1">Agent</label>
+            <select name="agent_id" required class="neko-input">
+                <option value="">Select agent</option>
+                {% for agent in agents %}
+                <option value="{{ agent.id }}">{{ agent.hostname }} ({{ agent.wireguard_ip or 'internal' }})</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div>
+            <label class="neko-label block text-xs mb-1">Port</label>
+            <input type="number" name="port" min="1" max="65535" required placeholder="22" class="neko-input w-24">
+        </div>
+        <button type="submit" class="neko-btn-primary px-4 py-2">Test</button>
+    </form>
+    <div id="test-port-result" class="mt-2 text-sm"></div>
+</div>
+
 <!-- Default blocked ports (public) - always applied on agents -->
 <div class="neko-card p-4 mb-6 border-l-4 border-neko-500">
     <h2 class="text-lg neko-subheader mb-2">Default blocked ports (public interface)</h2>
