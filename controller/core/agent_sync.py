@@ -36,7 +36,7 @@ def get_agent_base_url(agent) -> Optional[str]:
         if base:
             return base
     if getattr(agent, "wireguard_ip", None) and agent.wireguard_ip:
-        return f"http://{agent.wireguard_ip}:{AGENT_API_PORT}"
+        return f"https://{agent.wireguard_ip}:{AGENT_API_PORT}"
     return None
 
 
@@ -54,18 +54,41 @@ def _get_agents_to_sync(db: Session, agent_ids: Optional[List[int]] = None):
     return [a for a in agents if get_agent_base_url(a)]
 
 
+def _controller_token() -> Optional[str]:
+    """Return the controller token from settings (set during startup token initialisation)."""
+    try:
+        from controller.config import settings
+        return settings.controller_token or None
+    except Exception:
+        return None
+
+
+def _agent_api_ssl_verify() -> bool:
+    """Return whether to verify agent ControlAPI SSL certificates."""
+    try:
+        from controller.config import settings
+        return settings.agent_api_ssl_verify
+    except Exception:
+        return False
+
+
 async def trigger_sync_all_agents(db: Session, agent_ids: Optional[List[int]] = None) -> Dict[str, int]:
     """POST /trigger-sync to reachable agents (wireguard_ip or control_url)."""
     agents = _get_agents_to_sync(db, agent_ids)
+    token = _controller_token()
+    ssl_verify = _agent_api_ssl_verify()
 
     async def trigger_one(agent):
         base = get_agent_base_url(agent)
         if not base:
             return False
         url = f"{base.rstrip('/')}/trigger-sync"
+        headers = {}
+        if token:
+            headers["X-Controller-Token"] = token
         try:
-            async with httpx.AsyncClient(timeout=5.0) as client:
-                r = await client.post(url)
+            async with httpx.AsyncClient(timeout=5.0, verify=ssl_verify) as client:
+                r = await client.post(url, headers=headers)
                 if r.status_code == 200:
                     logger.info(f"Triggered sync on agent {agent.hostname}")
                     return True

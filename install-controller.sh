@@ -90,6 +90,12 @@ prompt_config() {
     read -p "Listen Port [8001]: " LISTEN_PORT
     LISTEN_PORT="${LISTEN_PORT:-8001}"
 
+    # Agent registration secret
+    echo ""
+    echo "Set an agent registration secret (recommended)."
+    echo "Agents must provide this secret to register. Leave blank to allow any agent to register."
+    read -p "Agent secret [leave blank to skip]: " AGENT_SECRET
+
     # Debug mode
     echo ""
     read -p "Enable debug mode? (y/n) [n]: " DEBUG_MODE
@@ -102,8 +108,10 @@ prompt_config() {
     # Summary
     print_header "Configuration Summary"
     echo "  Listen Address: $LISTEN_HOST:$LISTEN_PORT"
+    echo "  Agent Secret:   ${AGENT_SECRET:-(none — any agent can register)}"
     echo "  Debug Mode:     $DEBUG"
     echo "  Database:       $DATA_DIR/nekoproxy.db"
+    echo "  TLS:            Auto-generated self-signed cert on first start"
     echo ""
 
     read -p "Is this correct? (y/n): " CONFIRM
@@ -159,6 +167,12 @@ NEKO_HEARTBEAT_TIMEOUT=90
 # Stats cleanup (days)
 NEKO_STATS_RETENTION_DAYS=30
 EOF
+
+    if [[ -n "$AGENT_SECRET" ]]; then
+        echo "" >> "$CONFIG_FILE"
+        echo "# Agent registration secret" >> "$CONFIG_FILE"
+        echo "NEKO_AGENT_SECRET=$AGENT_SECRET" >> "$CONFIG_FILE"
+    fi
 
     # Secure the config file
     chmod 600 "$CONFIG_FILE"
@@ -266,8 +280,17 @@ show_instructions() {
     echo ""
     echo "The NekoProxy controller has been installed and started."
     echo ""
-    echo "Web UI: ${CYAN}http://$LISTEN_HOST:$LISTEN_PORT${NC}"
-    echo "API:    ${CYAN}http://$LISTEN_HOST:$LISTEN_PORT/api/v1/${NC}"
+    echo "Web UI: ${CYAN}https://$LISTEN_HOST:$LISTEN_PORT${NC}"
+    echo "API:    ${CYAN}https://$LISTEN_HOST:$LISTEN_PORT/api/v1/${NC}"
+    echo ""
+    echo "TLS: A self-signed certificate was auto-generated on first start."
+    echo "     Check the logs for the certificate SHA-256 fingerprint:"
+    if use_systemd; then
+        echo "     ${CYAN}journalctl -u $SERVICE_NAME | grep fingerprint${NC}"
+    else
+        echo "     ${CYAN}grep fingerprint /var/log/nekoproxy-controller.log${NC}"
+    fi
+    echo "     Share this fingerprint with your agents for verification."
     echo ""
     echo "Useful commands:"
     if use_systemd; then

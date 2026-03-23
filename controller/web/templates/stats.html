@@ -106,38 +106,6 @@
     </div>
 </div>
 
-<!-- Firewall / iptables Stats -->
-<h2 class="text-lg neko-subheader mb-4">Firewall / iptables ({{ period_label }})</h2>
-<div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
-    <div class="neko-stat-card bg-gradient-to-br from-neko-50 to-paw-50 border border-neko-200">
-        <div class="text-sm font-semibold text-neko-600">Total Packets</div>
-        <div class="mt-2 text-3xl font-extrabold text-neko-900">{{ firewall_summary.total_firewall_packets }}</div>
-    </div>
-    <div class="neko-stat-card bg-gradient-to-br from-red-50 to-red-100 border border-red-200">
-        <div class="text-sm font-semibold text-red-500">Blocked Packets</div>
-        <div class="mt-2 text-3xl font-extrabold text-red-600">{{ firewall_summary.blocked_packets }}</div>
-    </div>
-    <div class="neko-stat-card bg-gradient-to-br from-green-50 to-green-100 border border-green-200">
-        <div class="text-sm font-semibold text-green-500">Allowed Packets</div>
-        <div class="mt-2 text-3xl font-extrabold text-green-600">{{ firewall_summary.allowed_packets }}</div>
-    </div>
-    <div class="neko-stat-card bg-gradient-to-br from-paw-50 to-paw-100 border border-paw-200">
-        <div class="text-sm font-semibold text-paw-500">Firewall Data</div>
-        <div class="mt-2 text-3xl font-extrabold text-paw-600">
-            {% set bytes = firewall_summary.total_firewall_bytes %}
-            {% if bytes >= 1073741824 %}
-            {{ "%.2f"|format(bytes / 1073741824) }} GB
-            {% elif bytes >= 1048576 %}
-            {{ "%.2f"|format(bytes / 1048576) }} MB
-            {% elif bytes >= 1024 %}
-            {{ "%.2f"|format(bytes / 1024) }} KB
-            {% else %}
-            {{ bytes }} B
-            {% endif %}
-        </div>
-    </div>
-</div>
-
 <!-- Connection Log -->
 <div class="neko-table-container mb-8">
     <div class="px-6 py-4 border-b-2 border-neko-200">
@@ -275,74 +243,4 @@
     </div>
 </div>
 
-<!-- Firewall Log -->
-<div class="neko-table-container">
-    <div class="px-6 py-4 border-b-2 border-neko-200">
-        <h2 class="text-lg neko-subheader">Firewall Log ({{ period_label }})</h2>
-        <p class="text-xs text-neko-500 mt-1">Traffic that matched each iptables rule on agents (packet/byte counters). Entries appear when rules in the NEKOPROXY chain see traffic; blocks by blocklist or public baseline may not show here.</p>
-    </div>
-    <div class="neko-scroll">
-        <table class="min-w-full neko-table">
-            <thead class="sticky top-0 z-10">
-                <tr>
-                    <th class="text-left">Time</th>
-                    <th class="text-left">Agent</th>
-                    <th class="text-left">Port</th>
-                    <th class="text-left">Protocol</th>
-                    <th class="text-left">Interface</th>
-                    <th class="text-left">Action</th>
-                    <th class="text-left">Packets</th>
-                    <th class="text-left">Data</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for entry in firewall_entries %}
-                <tr>
-                    <td class="whitespace-nowrap text-sm text-neko-400">
-                        {{ entry.timestamp.strftime('%Y-%m-%d %H:%M:%S') }}
-                    </td>
-                    <td class="whitespace-nowrap text-sm text-neko-500">
-                        {{ entry.agent.hostname if entry.agent else entry.agent_id }}
-                    </td>
-                    <td class="whitespace-nowrap text-sm text-neko-900 font-medium">
-                        {{ entry.port }}
-                    </td>
-                    <td class="whitespace-nowrap text-sm text-neko-500">
-                        {{ entry.protocol }}
-                    </td>
-                    <td class="whitespace-nowrap text-sm text-neko-500">
-                        {{ entry.interface }}
-                    </td>
-                    <td class="whitespace-nowrap">
-                        {% if entry.action == 'block' %}
-                        <span class="neko-badge neko-badge-blocked">DROP</span>
-                        {% else %}
-                        <span class="neko-badge neko-badge-healthy">ACCEPT</span>
-                        {% endif %}
-                    </td>
-                    <td class="whitespace-nowrap text-sm text-neko-500">
-                        {{ entry.packets }}
-                    </td>
-                    <td class="whitespace-nowrap text-sm text-neko-500">
-                        {% set bytes = entry.bytes_count %}
-                        {% if bytes >= 1048576 %}
-                        {{ "%.2f"|format(bytes / 1048576) }} MB
-                        {% elif bytes >= 1024 %}
-                        {{ "%.2f"|format(bytes / 1024) }} KB
-                        {% else %}
-                        {{ bytes }} B
-                        {% endif %}
-                    </td>
-                </tr>
-                {% else %}
-                <tr>
-                    <td colspan="8" class="text-center py-8 neko-empty">
-                        No firewall activity in this period (=^.^=)
-                    </td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
-    </div>
-</div>
 {% endblock %}

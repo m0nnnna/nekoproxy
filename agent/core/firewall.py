@@ -8,6 +8,7 @@ from dataclasses import dataclass
 
 from shared.models import FirewallRuleResponse
 from shared.models.common import FirewallAction, Protocol
+from agent.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -372,6 +373,10 @@ class FirewallManager:
                 safe_ports = [(p, proto) for p, proto in allowed_ports if p not in DANGEROUS_PORTS_ON_PUBLIC]
             for port, proto in safe_ports:
                 await self._run_iptables("-A", PUBLIC_BASELINE_CHAIN, "-p", proto, "--dport", str(port), "-j", "ACCEPT")
+            # Explicitly drop the ControlAPI management port before the catch-all DROP so it is
+            # always blocked on the public interface even if the default-deny is removed or bypassed.
+            mgmt_port = settings.api_port
+            await self._run_iptables("-A", PUBLIC_BASELINE_CHAIN, "-p", "tcp", "--dport", str(mgmt_port), "-j", "DROP")
             await self._run_iptables("-A", PUBLIC_BASELINE_CHAIN, "-j", "DROP")
             skipped = len(allowed_ports) - len(safe_ports)
             if allow_dangerous_ports_on_public:

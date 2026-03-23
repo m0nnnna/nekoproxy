@@ -90,7 +90,9 @@ prompt_config() {
 
     # Controller URL
     echo ""
-    echo "Enter the Controller URL (e.g., http://10.0.0.1:8001)"
+    echo "Enter the Controller URL."
+    echo "Use https:// if the controller has TLS enabled (recommended, e.g., https://10.0.0.1:8001)."
+    echo "Use http:// only for plain HTTP (e.g., http://10.0.0.1:8001)."
     read -p "Controller URL: " CONTROLLER_URL
 
     if [[ -z "$CONTROLLER_URL" ]]; then
@@ -121,12 +123,23 @@ prompt_config() {
     echo "Enter this agent's public IP address (optional, press Enter to skip)"
     read -p "Public IP [auto-detect]: " PUBLIC_IP
 
+    # Agent registration secret
+    echo ""
+    echo "If the controller requires an agent registration secret, enter it here."
+    echo "Leave blank if no secret is configured on the controller."
+    read -p "Agent secret [leave blank if none]: " AGENT_SECRET
+
     # Summary
     print_header "Configuration Summary"
     echo "  Controller URL: $CONTROLLER_URL"
     echo "  WireGuard IP:   ${WIREGUARD_IP:-<internal>}"
     echo "  Hostname:       $AGENT_HOSTNAME"
     echo "  Public IP:      ${PUBLIC_IP:-auto-detect}"
+    echo "  Agent secret:   ${AGENT_SECRET:-(none)}"
+    echo "  TLS:            Auto-generated self-signed cert on first start"
+    if [[ "$CONTROLLER_URL" == https://* ]]; then
+        echo "  Controller TLS: HTTPS — cert will be downloaded and cached on first registration (TOFU)"
+    fi
     echo ""
 
     read -p "Is this correct? (y/n): " CONFIRM
@@ -177,6 +190,11 @@ EOF
     fi
     if [[ -n "$PUBLIC_IP" ]]; then
         echo "NEKO_AGENT_PUBLIC_IP=$PUBLIC_IP" >> "$CONFIG_FILE"
+    fi
+    if [[ -n "$AGENT_SECRET" ]]; then
+        echo "" >> "$CONFIG_FILE"
+        echo "# Registration secret (must match NEKO_AGENT_SECRET on controller)" >> "$CONFIG_FILE"
+        echo "NEKO_AGENT_AGENT_SECRET=$AGENT_SECRET" >> "$CONFIG_FILE"
     fi
 
     # Secure the config file

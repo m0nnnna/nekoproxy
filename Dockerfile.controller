@@ -1,0 +1,32 @@
+FROM python:3.12-slim
+
+WORKDIR /app
+
+# Install Python dependencies
+COPY requirements.txt .
+RUN pip install --no-cache-dir \
+    "fastapi>=0.109.0" \
+    "uvicorn[standard]>=0.27.0" \
+    "sqlalchemy>=2.0.0" \
+    "pydantic>=2.0.0" \
+    "pydantic-settings>=2.0.0" \
+    "jinja2>=3.1.0" \
+    "python-multipart>=0.0.6" \
+    "httpx>=0.26.0" \
+    "aiofiles>=23.0.0"
+
+# Copy source packages
+COPY controller/ ./controller/
+COPY shared/ ./shared/
+
+# Persistent data directory (database + agent binary uploads)
+RUN mkdir -p /data/uploads/agent
+
+# Controller listens on 8001
+EXPOSE 8001
+
+# Default env — can be overridden by docker-compose env_file or -e flags
+ENV NEKO_DATABASE_URL=sqlite:////data/nekoproxy.db
+ENV NEKO_UPLOADS_DIR=/data/uploads/agent
+
+CMD ["python", "-m", "controller.main"]

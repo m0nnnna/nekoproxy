@@ -107,6 +107,17 @@ class NekoProxyAgent:
         if self._stats_reporter:
             self._stats_reporter.record(stats)
 
+    def _make_agent_headers(self) -> dict:
+        """Return auth headers for agent→controller HTTP requests."""
+        if settings.agent_token:
+            return {"X-Agent-Token": settings.agent_token}
+        return {}
+
+    def _make_httpx_client(self, timeout: float = 10.0) -> httpx.AsyncClient:
+        """Return an httpx client configured for the controller (SSL verify + token)."""
+        ssl_verify = settings.controller_ssl_ca_cert or settings.controller_ssl_verify or False
+        return httpx.AsyncClient(timeout=timeout, verify=ssl_verify)
+
     async def _on_auto_block(self, ip: str, reason: str, event_type: str):
         """Called by SecurityMonitor when an IP should be auto-blocked (aggressive firewall).
         Blocks locally (proxy + firewall) and reports to controller so blocklist syncs to all agents.
@@ -120,8 +131,8 @@ class NekoProxyAgent:
         url = f"{settings.controller_url}/api/v1/blocklist/report"
         payload = {"ip": ip, "reason": reason, "agent_id": self.agent_id}
         try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                r = await client.post(url, json=payload)
+            async with self._make_httpx_client() as client:
+                r = await client.post(url, json=payload, headers=self._make_agent_headers())
                 r.raise_for_status()
                 logger.info(f"Auto-blocked {ip} ({event_type}) and reported to controller")
         except Exception as e:
@@ -264,6 +275,47 @@ class NekoProxyAgent:
 
         return False
 
+    async def _tofu_download_controller_cert(self) -> None:
+        """Download and cache the controller's TLS certificate (Trust On First Use).
+
+        Called once after first successful registration when the controller is
+        running over HTTPS with an auto-generated (or any self-signed) cert.
+        After this, future connections can verify against the cached cert.
+        """
+        if settings.controller_ssl_ca_cert:
+            return  # Already have a CA cert configured
+        if not settings.controller_url.startswith("https://"):
+            return  # HTTP — nothing to do
+
+        cert_save_path = settings.install_dir_resolved / "controller-ca.pem"
+        if cert_save_path.is_file():
+            # Already cached from a previous run — load it
+            settings.controller_ssl_ca_cert = str(cert_save_path)
+            logger.info("Loaded cached controller cert: %s", cert_save_path)
+            return
+
+        url = f"{settings.controller_url}/api/v1/agents/controller-cert"
+        try:
+            # First download uses verify=False (TOFU — same model as SSH host keys).
+            # After this the cert is pinned and all future connections verify against it.
+            async with httpx.AsyncClient(timeout=10.0, verify=False) as client:
+                r = await client.get(url)
+                r.raise_for_status()
+                cert_save_path.write_text(r.text, encoding="utf-8")
+                settings.controller_ssl_ca_cert = str(cert_save_path)
+
+                from shared.tls import cert_fingerprint
+                fp = cert_fingerprint(cert_save_path)
+                logger.warning("=" * 70)
+                logger.warning("CONTROLLER CERTIFICATE CACHED (Trust On First Use)")
+                logger.warning("  Saved to: %s", cert_save_path)
+                logger.warning("  SHA-256 fingerprint: %s", fp)
+                logger.warning("  Verify this matches the fingerprint shown on the controller.")
+                logger.warning("  Future connections will be verified against this cert.")
+                logger.warning("=" * 70)
+        except Exception as e:
+            logger.warning("Could not download controller cert for TOFU: %s", e)
+
     async def register(self) -> bool:
         """Register with the controller."""
         reg_data = {
@@ -283,22 +335,90 @@ class NekoProxyAgent:
         url = f"{settings.controller_url}/api/v1/agents/register"
 
         try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
+            # On first run the controller cert may not be cached yet — use verify=False
+            # for registration itself, then immediately download and cache the cert.
+            ssl_verify = settings.controller_ssl_ca_cert or settings.controller_ssl_verify or False
+            async with httpx.AsyncClient(timeout=10.0, verify=ssl_verify) as client:
                 response = await client.post(url, json=reg_data)
                 response.raise_for_status()
                 data = response.json()
                 self.agent_id = data["id"]
+
+                # Save per-agent token returned by controller
+                token = data.get("agent_token")
+                if token:
+                    settings.agent_token = token
+                    try:
+                        token_file = settings.install_dir_resolved / "agent_token.txt"
+                        token_file.write_text(token, encoding="utf-8")
+                        logger.info(f"Agent token saved to {token_file}")
+                    except Exception as e:
+                        logger.warning(f"Could not save agent token to file: {e}")
+
                 logger.info(
                     f"Registered with controller as agent {self.agent_id} "
                     f"({settings.hostname} @ {settings.wireguard_ip})"
                 )
+
+                # TOFU: download and cache the controller cert so future connections
+                # can be properly verified (skipped if cert already cached).
+                await self._tofu_download_controller_cert()
+
                 return True
         except httpx.RequestError as e:
             logger.error(f"Failed to connect to controller: {e}")
             return False
         except httpx.HTTPStatusError as e:
-            logger.error(f"Registration failed: {e.response.text}")
+            if e.response.status_code == 401:
+                logger.error(
+                    "Registration failed: 401 Unauthorized. "
+                    "Check that NEKO_AGENT_AGENT_SECRET in agent.env matches "
+                    "NEKO_AGENT_SECRET on the controller."
+                )
+            else:
+                logger.error(f"Registration failed: HTTP {e.response.status_code} - {e.response.text}")
             return False
+
+    def _pre_generate_control_cert(self):
+        """Pre-generate ControlAPI TLS cert before registration.
+
+        Generating the cert first lets us:
+        1. Write the cert files to /opt/nekoproxy (or exe dir) before anything else.
+        2. Auto-set settings.control_url to https://... so the controller knows our scheme.
+        This must be called synchronously (no await) before register().
+        """
+        try:
+            from shared.tls import ensure_cert
+            install_dir = settings.install_dir_resolved
+            install_dir.mkdir(parents=True, exist_ok=True)
+            cert_path = install_dir / "agent-cert.pem"
+            key_path = install_dir / "agent-key.pem"
+            extra_ips = [ip for ip in [settings.wireguard_ip, settings.public_ip] if ip]
+            generated, fp = ensure_cert(cert_path, key_path, extra_ips=extra_ips)
+            settings.control_ssl_certfile = str(cert_path)
+            settings.control_ssl_keyfile = str(key_path)
+            if generated:
+                logger.info("Generated ControlAPI TLS cert (SHA-256: %s) at %s", fp, cert_path)
+            else:
+                logger.info("Using existing ControlAPI TLS cert (SHA-256: %s)", fp)
+
+            # Auto-set control_url to https so the controller uses TLS when calling us back.
+            # Only set if not explicitly configured by the user.
+            if not settings.control_url:
+                bind_ip = (
+                    getattr(settings, "control_bind_ip", None)
+                    or settings.wireguard_ip
+                    or "127.0.0.1"
+                )
+                settings.control_url = f"https://{bind_ip}:{settings.api_port}"
+                logger.info("Auto-set control_url: %s", settings.control_url)
+        except Exception as e:
+            logger.error(
+                "Could not generate ControlAPI TLS cert: %s  "
+                "ControlAPI will run on HTTP (unencrypted). "
+                "Ensure 'cryptography' is installed / bundled.",
+                e,
+            )
 
     async def start(self):
         """Start the NekoProxy agent."""
@@ -308,6 +428,10 @@ class NekoProxyAgent:
         logger.info(f"  WireGuard IP: {settings.wireguard_ip or '(internal - none)'}")
         logger.info(f"  Controller: {settings.controller_url}")
         logger.info("=" * 70)
+
+        # Generate ControlAPI TLS cert BEFORE registering so the controller
+        # receives our https:// control_url during registration.
+        self._pre_generate_control_cert()
 
         # Register with controller
         if not await self.register():

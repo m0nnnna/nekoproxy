@@ -46,12 +46,14 @@ class IptablesMonitor:
             logger.info("NEKOPROXY chain not found yet - iptables monitoring will start when rules are applied")
             # Still start the loop - it will retry checking for the chain
             self._running = True
-            self._client = httpx.AsyncClient(timeout=10.0)
+            ssl_verify = getattr(settings, "controller_ssl_ca_cert", None) or getattr(settings, "controller_ssl_verify", False)
+            self._client = httpx.AsyncClient(timeout=10.0, verify=ssl_verify)
             self._task = asyncio.create_task(self._monitor_loop())
             return
 
         self._running = True
-        self._client = httpx.AsyncClient(timeout=10.0)
+        ssl_verify = getattr(settings, "controller_ssl_ca_cert", None) or getattr(settings, "controller_ssl_verify", False)
+        self._client = httpx.AsyncClient(timeout=10.0, verify=ssl_verify)
 
         # Read initial counters as baseline (don't report these)
         await self._read_counters(initial=True)
@@ -199,7 +201,8 @@ class IptablesMonitor:
         }
 
         try:
-            response = await self._client.post(url, json=payload)
+            _headers = {"X-Agent-Token": settings.agent_token} if settings.agent_token else {}
+            response = await self._client.post(url, json=payload, headers=_headers)
             response.raise_for_status()
             logger.info(f"Reported {len(batch)} firewall stats to controller")
         except httpx.RequestError as e:

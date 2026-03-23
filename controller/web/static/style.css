@@ -547,3 +547,194 @@
     border-left: 4px solid #f59e0b;
     border-radius: 0 0.75rem 0.75rem 0;
 }
+
+/* ===== Dark Mode Toggle ===== */
+.neko-dark-toggle::before {
+    content: '🌙';
+    font-size: 1rem;
+}
+html.dark .neko-dark-toggle::before {
+    content: '☀️';
+    font-size: 1rem;
+}
+
+/* ===== Dark Mode ===== */
+html.dark body {
+    background-color: #0f0a1a;
+    color: #e8d5f0;
+}
+
+/* Override Tailwind bg-neko-50 on body */
+html.dark body.bg-neko-50 {
+    background-color: #0f0a1a !important;
+}
+
+html.dark .neko-card,
+html.dark .neko-table-container {
+    background: #1e1430;
+    border-color: rgba(168, 85, 247, 0.2);
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.4);
+}
+
+html.dark .neko-card:hover {
+    box-shadow: 0 8px 25px rgba(168, 85, 247, 0.2), 0 2px 6px rgba(0, 0, 0, 0.4);
+}
+
+html.dark .neko-table thead {
+    background: linear-gradient(135deg, #160e28, #1a1030);
+}
+
+html.dark .neko-table thead th {
+    color: #f9a8d4;
+    border-bottom-color: #3d1f5e;
+}
+
+html.dark .neko-table tbody tr {
+    border-bottom-color: #2a1d3f;
+}
+
+html.dark .neko-table tbody tr:hover {
+    background-color: #2a1d3f;
+}
+
+html.dark .neko-scroll::-webkit-scrollbar-track {
+    background: #1e1430;
+}
+
+html.dark .neko-scroll::-webkit-scrollbar-thumb {
+    border-color: #1e1430;
+}
+
+html.dark .neko-scroll {
+    scrollbar-color: #a855f7 #1e1430;
+}
+
+/* Stat cards — strip light gradients, replace with dark surface */
+html.dark .neko-stat-card {
+    background: #1e1430 !important;
+    background-image: none !important;
+    border-color: rgba(168, 85, 247, 0.25) !important;
+}
+
+/* Generic Tailwind bg-white override */
+html.dark .bg-white {
+    background-color: #1e1430 !important;
+}
+
+/* Form inputs */
+html.dark .neko-input,
+html.dark select,
+html.dark textarea {
+    background: #1e1430;
+    border-color: #3d1f5e;
+    color: #e8d5f0;
+}
+
+html.dark .neko-input:focus {
+    border-color: #a855f7;
+    box-shadow: 0 0 0 3px rgba(168, 85, 247, 0.25);
+}
+
+html.dark .neko-input::placeholder {
+    color: #5a3a7a;
+}
+
+/* Text */
+html.dark .neko-header {
+    color: #f9a8d4;
+}
+
+html.dark .neko-subheader {
+    color: #e879b9;
+}
+
+html.dark .neko-label {
+    color: #f9a8d4;
+}
+
+html.dark .neko-empty {
+    color: #7c4fa0;
+}
+
+/* Info banners */
+html.dark .neko-info {
+    background: linear-gradient(135deg, #1e1430, #1a1040);
+    color: #f9a8d4;
+    border-left-color: #a855f7;
+}
+
+html.dark .neko-warning {
+    background: linear-gradient(135deg, #1f1a0f, #2a2212);
+    color: #fbbf24;
+    border-left-color: #f59e0b;
+}
+
+html.dark .neko-success {
+    background: linear-gradient(135deg, #0a1f15, #0d2a1c);
+    color: #6ee7b7;
+    border-left-color: #34d399;
+}
+
+/* Footer */
+html.dark .neko-footer {
+    background: linear-gradient(135deg, #0a0518, #120a25);
+}
+
+/* Time range buttons */
+html.dark .neko-time-inactive {
+    background: #2a1d3f;
+    color: #f9a8d4;
+}
+
+html.dark .neko-time-inactive:hover {
+    background: #3a2550;
+}
+
+/* Tabs */
+html.dark .neko-tab {
+    color: #9868c8;
+}
+
+html.dark .neko-tab:hover {
+    color: #c084fc;
+    border-bottom-color: #3d1f5e;
+}
+
+html.dark .neko-tab-active {
+    color: #ec4899;
+    border-bottom-color: #ec4899;
+}
+
+/* Table container header borders */
+html.dark .border-neko-200 {
+    border-color: #3d1f5e !important;
+}
+
+/* Unacked alert rows */
+html.dark .neko-unacked {
+    background-color: #2a1520;
+}
+
+html.dark .neko-unacked:hover {
+    background-color: #3a1e2c;
+}
+
+/* Password display */
+html.dark .neko-password-display {
+    background: linear-gradient(135deg, #1f1a0f, #2a2212);
+    border-left-color: #f59e0b;
+    color: #fbbf24;
+}
+
+/* Preset buttons */
+html.dark .neko-preset-danger {
+    background: linear-gradient(135deg, #3a1520, #4a1c28);
+    color: #fca5a5;
+    border-color: #7f1d1d;
+}
+
+html.dark .neko-preset-success {
+    background: linear-gradient(135deg, #0a2a1a, #0d3822);
+    color: #6ee7b7;
+    border-color: #065f46;
+}

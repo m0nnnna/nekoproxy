@@ -1,11 +1,13 @@
 """Web dashboard routes using Jinja2 templates."""
 
+import hmac
 import httpx
 import asyncio
 import logging
+from typing import Optional
 
-from fastapi import APIRouter, Depends, Request, Form, HTTPException, UploadFile, File
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi import APIRouter, Depends, Request, Form, HTTPException, UploadFile, File, Cookie
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
@@ -28,6 +30,8 @@ from controller.database.repositories import (
 )
 from controller.core.email_manager import EmailManager
 from controller.core.agent_sync import trigger_sync_all_agents, get_agent_base_url, get_agent_host
+from controller.core.auth import create_session, validate_session, invalidate_session, get_web_password
+from controller.core.agent_sync import _controller_token, _agent_api_ssl_verify
 from shared.models.common import Protocol, FirewallAction, AlertSeverity, AlertType, EmailBlocklistType
 
 # Ensure templates directory exists
@@ -38,8 +42,66 @@ templates = Jinja2Templates(directory=str(settings.templates_dir))
 router = APIRouter()
 
 
+# ---------------------------------------------------------------------------
+# Session authentication helpers
+# ---------------------------------------------------------------------------
+
+def _require_session(
+    neko_session: Optional[str] = Cookie(default=None),
+):
+    """FastAPI dependency: raise 401 if session cookie is invalid."""
+    if not validate_session(neko_session):
+        raise HTTPException(status_code=401, detail="Not authenticated")
+
+
+# ---------------------------------------------------------------------------
+# Login / Logout
+# ---------------------------------------------------------------------------
+
+@router.get("/login", response_class=HTMLResponse)
+async def login_page(request: Request):
+    """Render the login form."""
+    return templates.TemplateResponse("login.html", {"request": request, "error": None})
+
+
+@router.post("/login")
+async def login(
+    request: Request,
+    password: str = Form(...),
+    db: Session = Depends(get_db),
+):
+    """Validate password (API token) and issue session cookie."""
+    web_password = get_web_password(db)
+    if web_password and hmac.compare_digest(password, web_password):
+        session_token = create_session()
+        response = RedirectResponse(url="/", status_code=302)
+        response.set_cookie(
+            "neko_session",
+            session_token,
+            httponly=True,
+            samesite="strict",
+            secure=bool(settings.ssl_certfile),  # Secure flag when HTTPS is enabled
+        )
+        return response
+    return templates.TemplateResponse(
+        "login.html",
+        {"request": request, "error": "Invalid password"},
+        status_code=401,
+    )
+
+
+@router.post("/logout")
+@router.get("/logout")
+async def logout(neko_session: Optional[str] = Cookie(default=None)):
+    """Invalidate session and redirect to login."""
+    invalidate_session(neko_session)
+    response = RedirectResponse(url="/login", status_code=302)
+    response.delete_cookie("neko_session")
+    return response
+
+
 @router.get("/", response_class=HTMLResponse)
-async def dashboard(request: Request, db: Session = Depends(get_db)):
+async def dashboard(request: Request, _auth: None = Depends(_require_session), db: Session = Depends(get_db)):
     """Main dashboard page."""
     agent_repo = AgentRepository(db)
     stat_repo = ConnectionStatRepository(db)
@@ -69,7 +131,7 @@ def _get_uploaded_agent_path():
 
 
 @router.get("/agents", response_class=HTMLResponse)
-async def agents_page(request: Request, db: Session = Depends(get_db)):
+async def agents_page(request: Request, _auth: None = Depends(_require_session), db: Session = Depends(get_db)):
     """Agents management page."""
     agent_repo = AgentRepository(db)
     agents = agent_repo.get_all()
@@ -130,11 +192,14 @@ async def push_agent_update(
             status_code=400
         )
     url = f"{base_url.rstrip('/')}/update-binary"
+    _ctrl_headers = {}
+    if _controller_token():
+        _ctrl_headers['X-Controller-Token'] = _controller_token()
     try:
         with open(path, "rb") as f:
             body = f.read()
-        async with httpx.AsyncClient(timeout=120.0) as client:
-            r = await client.post(url, content=body)
+        async with httpx.AsyncClient(timeout=120.0, verify=_agent_api_ssl_verify()) as client:
+            r = await client.post(url, content=body, headers=_ctrl_headers)
         if r.status_code == 200:
             return HTMLResponse(
                 f'<span class="text-green-600">Update pushed to {agent.hostname}. Agent will restart with new binary.</span>'
@@ -174,7 +239,7 @@ async def set_agent_internal(
 
 
 @router.delete("/agents/{agent_id}", response_class=HTMLResponse)
-async def delete_agent_htmx(agent_id: int, db: Session = Depends(get_db)):
+async def delete_agent_htmx(agent_id: int, _auth: None = Depends(_require_session), db: Session = Depends(get_db)):
     """Delete agent via htmx."""
     repo = AgentRepository(db)
     if not repo.delete(agent_id):
@@ -234,7 +299,7 @@ async def create_service_htmx(
 
 
 @router.delete("/services/{service_id}", response_class=HTMLResponse)
-async def delete_service_htmx(service_id: int, db: Session = Depends(get_db)):
+async def delete_service_htmx(service_id: int, _auth: None = Depends(_require_session), db: Session = Depends(get_db)):
     """Delete service via htmx."""
     repo = ServiceRepository(db)
     if not repo.delete(service_id):
@@ -307,7 +372,7 @@ async def create_assignment_htmx(
 
 
 @router.delete("/assignments/{assignment_id}", response_class=HTMLResponse)
-async def delete_assignment_htmx(assignment_id: int, db: Session = Depends(get_db)):
+async def delete_assignment_htmx(assignment_id: int, _auth: None = Depends(_require_session), db: Session = Depends(get_db)):
     """Delete assignment via htmx."""
     repo = ServiceAssignmentRepository(db)
     if not repo.delete(assignment_id):
@@ -316,7 +381,7 @@ async def delete_assignment_htmx(assignment_id: int, db: Session = Depends(get_d
 
 
 @router.post("/assignments/{assignment_id}/toggle", response_class=HTMLResponse)
-async def toggle_assignment_htmx(request: Request, assignment_id: int, db: Session = Depends(get_db)):
+async def toggle_assignment_htmx(request: Request, assignment_id: int, _auth: None = Depends(_require_session), db: Session = Depends(get_db)):
     """Toggle assignment enabled status via htmx."""
     assign_repo = ServiceAssignmentRepository(db)
     service_repo = ServiceRepository(db)
@@ -341,7 +406,7 @@ async def toggle_assignment_htmx(request: Request, assignment_id: int, db: Sessi
 
 
 @router.get("/settings", response_class=HTMLResponse)
-async def settings_page(request: Request, db: Session = Depends(get_db)):
+async def settings_page(request: Request, _auth: None = Depends(_require_session), db: Session = Depends(get_db)):
     """Global settings page (geo, lockdown, controller URL, apply to agents)."""
     gs_repo = GlobalSettingsRepository(db)
     gs = gs_repo.get()
@@ -403,7 +468,7 @@ async def apply_settings_htmx(
 
 
 @router.get("/blocklist", response_class=HTMLResponse)
-async def blocklist_page(request: Request, db: Session = Depends(get_db)):
+async def blocklist_page(request: Request, _auth: None = Depends(_require_session), db: Session = Depends(get_db)):
     """IP Blocklist management page."""
     blocklist_repo = BlocklistRepository(db)
     entries = blocklist_repo.get_all()
@@ -445,7 +510,7 @@ async def add_blocklist_htmx(
 
 
 @router.delete("/blocklist/{ip}", response_class=HTMLResponse)
-async def remove_blocklist_htmx(ip: str, db: Session = Depends(get_db)):
+async def remove_blocklist_htmx(ip: str, _auth: None = Depends(_require_session), db: Session = Depends(get_db)):
     """Remove IP from blocklist via htmx."""
     repo = BlocklistRepository(db)
     if not repo.remove(ip):
@@ -456,7 +521,7 @@ async def remove_blocklist_htmx(ip: str, db: Session = Depends(get_db)):
 
 
 @router.post("/blocklist/apply", response_class=HTMLResponse)
-async def apply_blocklist_htmx(request: Request, db: Session = Depends(get_db)):
+async def apply_blocklist_htmx(request: Request, _auth: None = Depends(_require_session), db: Session = Depends(get_db)):
     """Push config sync to all reachable agents (wireguard_ip or control_url)."""
     agent_repo = AgentRepository(db)
     agents = [a for a in agent_repo.get_all() if get_agent_base_url(a)]
@@ -472,9 +537,11 @@ async def apply_blocklist_htmx(request: Request, db: Session = Depends(get_db)):
         url = f"{base.rstrip('/')}/trigger-sync" if base else None
         if not url:
             return False
+        _t = _controller_token()
+        _h = {'X-Controller-Token': _t} if _t else {}
         try:
-            async with httpx.AsyncClient(timeout=5.0) as client:
-                response = await client.post(url)
+            async with httpx.AsyncClient(timeout=5.0, verify=_agent_api_ssl_verify()) as client:
+                response = await client.post(url, headers=_h)
                 if response.status_code == 200:
                     logger.info(f"Triggered sync on agent {agent.hostname}")
                     return True
@@ -500,7 +567,7 @@ async def apply_blocklist_htmx(request: Request, db: Session = Depends(get_db)):
 
 
 @router.get("/live", response_class=HTMLResponse)
-async def live_page(request: Request, db: Session = Depends(get_db)):
+async def live_page(request: Request, _auth: None = Depends(_require_session), db: Session = Depends(get_db)):
     """Live view: connections in the last 60 seconds, auto-refreshing."""
     stat_repo = ConnectionStatRepository(db)
     connections = stat_repo.get_recent_seconds(seconds=60, limit=200)
@@ -512,7 +579,7 @@ async def live_page(request: Request, db: Session = Depends(get_db)):
 
 
 @router.get("/partials/live-connections", response_class=HTMLResponse)
-async def live_connections_partial(request: Request, seconds: int = 60, db: Session = Depends(get_db)):
+async def live_connections_partial(request: Request, seconds: int = 60, _auth: None = Depends(_require_session), db: Session = Depends(get_db)):
     """Partial for live connection list (HTMX poll every 2s)."""
     stat_repo = ConnectionStatRepository(db)
     connections = stat_repo.get_recent_seconds(seconds=seconds, limit=200)
@@ -523,7 +590,7 @@ async def live_connections_partial(request: Request, seconds: int = 60, db: Sess
 
 
 @router.get("/stats", response_class=HTMLResponse)
-async def stats_page(request: Request, period: str = "24h", db: Session = Depends(get_db)):
+async def stats_page(request: Request, period: str = "24h", _auth: None = Depends(_require_session), db: Session = Depends(get_db)):
     """Statistics page with time range selection."""
     from controller.database.repositories import EmailStatRepository, FirewallStatRepository
 
@@ -575,7 +642,7 @@ DEFAULT_BLOCKED_PORTS = [
 
 
 @router.get("/firewall", response_class=HTMLResponse)
-async def firewall_page(request: Request, db: Session = Depends(get_db)):
+async def firewall_page(request: Request, _auth: None = Depends(_require_session), db: Session = Depends(get_db)):
     """Firewall rules management page (port rules and default blocked ports)."""
     firewall_repo = FirewallRuleRepository(db)
     agent_repo = AgentRepository(db)
@@ -642,7 +709,7 @@ async def create_firewall_rule_htmx(
 
 
 @router.delete("/firewall/{rule_id}", response_class=HTMLResponse)
-async def delete_firewall_rule_htmx(rule_id: int, db: Session = Depends(get_db)):
+async def delete_firewall_rule_htmx(rule_id: int, _auth: None = Depends(_require_session), db: Session = Depends(get_db)):
     """Delete firewall rule via htmx."""
     repo = FirewallRuleRepository(db)
     if not repo.delete(rule_id):
@@ -651,7 +718,7 @@ async def delete_firewall_rule_htmx(rule_id: int, db: Session = Depends(get_db))
 
 
 @router.post("/firewall/{rule_id}/toggle", response_class=HTMLResponse)
-async def toggle_firewall_rule_htmx(request: Request, rule_id: int, db: Session = Depends(get_db)):
+async def toggle_firewall_rule_htmx(request: Request, rule_id: int, _auth: None = Depends(_require_session), db: Session = Depends(get_db)):
     """Toggle firewall rule enabled status via htmx."""
     repo = FirewallRuleRepository(db)
     agent_repo = AgentRepository(db)
@@ -673,7 +740,7 @@ async def toggle_firewall_rule_htmx(request: Request, rule_id: int, db: Session 
 
 
 @router.post("/firewall/apply", response_class=HTMLResponse)
-async def apply_firewall_rules_htmx(request: Request, db: Session = Depends(get_db)):
+async def apply_firewall_rules_htmx(request: Request, _auth: None = Depends(_require_session), db: Session = Depends(get_db)):
     """Push config sync to all reachable agents (wireguard_ip or control_url)."""
     agent_repo = AgentRepository(db)
     agents = [a for a in agent_repo.get_all() if get_agent_base_url(a)]
@@ -728,7 +795,7 @@ async def apply_firewall_rules_htmx(request: Request, db: Session = Depends(get_
 
 
 @router.post("/firewall/test-port", response_class=HTMLResponse)
-async def test_agent_port_htmx(request: Request, db: Session = Depends(get_db)):
+async def test_agent_port_htmx(request: Request, _auth: None = Depends(_require_session), db: Session = Depends(get_db)):
     """Test TCP connectivity to a port on an agent (verify firewall blocking). Returns HTML snippet."""
     form = await request.form()
     try:
@@ -765,7 +832,7 @@ async def test_agent_port_htmx(request: Request, db: Session = Depends(get_db)):
 
 
 @router.get("/rules", response_class=HTMLResponse)
-async def rules_page(request: Request, db: Session = Depends(get_db)):
+async def rules_page(request: Request, _auth: None = Depends(_require_session), db: Session = Depends(get_db)):
     """Unified rules page combining services and assignments."""
     service_repo = ServiceRepository(db)
     assign_repo = ServiceAssignmentRepository(db)
@@ -868,7 +935,7 @@ async def create_rule_htmx(
 
 
 @router.post("/rules/{assignment_id}/toggle", response_class=HTMLResponse)
-async def toggle_rule_htmx(request: Request, assignment_id: int, db: Session = Depends(get_db)):
+async def toggle_rule_htmx(request: Request, assignment_id: int, _auth: None = Depends(_require_session), db: Session = Depends(get_db)):
     """Toggle rule enabled status via htmx."""
     assign_repo = ServiceAssignmentRepository(db)
 
@@ -894,7 +961,7 @@ async def toggle_rule_htmx(request: Request, assignment_id: int, db: Session = D
 
 
 @router.delete("/rules/{assignment_id}", response_class=HTMLResponse)
-async def delete_rule_htmx(assignment_id: int, db: Session = Depends(get_db)):
+async def delete_rule_htmx(assignment_id: int, _auth: None = Depends(_require_session), db: Session = Depends(get_db)):
     """Delete rule (assignment and service if no other assignments)."""
     assign_repo = ServiceAssignmentRepository(db)
     service_repo = ServiceRepository(db)
@@ -918,7 +985,7 @@ async def delete_rule_htmx(assignment_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/rules/apply", response_class=HTMLResponse)
-async def apply_rules_htmx(request: Request, db: Session = Depends(get_db)):
+async def apply_rules_htmx(request: Request, _auth: None = Depends(_require_session), db: Session = Depends(get_db)):
     """Push config sync to all reachable agents (wireguard_ip or control_url)."""
     agent_repo = AgentRepository(db)
     agents = [a for a in agent_repo.get_all() if get_agent_base_url(a)]
@@ -971,7 +1038,7 @@ async def apply_rules_htmx(request: Request, db: Session = Depends(get_db)):
 
 
 @router.get("/alerts", response_class=HTMLResponse)
-async def alerts_page(request: Request, db: Session = Depends(get_db)):
+async def alerts_page(request: Request, _auth: None = Depends(_require_session), db: Session = Depends(get_db)):
     """Alerts management page."""
     alert_repo = AlertRepository(db)
     agent_repo = AgentRepository(db)
@@ -1004,7 +1071,7 @@ async def alerts_page(request: Request, db: Session = Depends(get_db)):
 
 
 @router.post("/alerts/{alert_id}/acknowledge", response_class=HTMLResponse)
-async def acknowledge_alert_htmx(request: Request, alert_id: int, db: Session = Depends(get_db)):
+async def acknowledge_alert_htmx(request: Request, alert_id: int, _auth: None = Depends(_require_session), db: Session = Depends(get_db)):
     """Acknowledge an alert via htmx."""
     alert_repo = AlertRepository(db)
     agent_repo = AgentRepository(db)
@@ -1034,7 +1101,7 @@ async def acknowledge_alert_htmx(request: Request, alert_id: int, db: Session = 
 
 
 @router.post("/alerts/acknowledge-all", response_class=HTMLResponse)
-async def acknowledge_all_alerts_htmx(request: Request, db: Session = Depends(get_db)):
+async def acknowledge_all_alerts_htmx(request: Request, _auth: None = Depends(_require_session), db: Session = Depends(get_db)):
     """Acknowledge all alerts via htmx."""
     alert_repo = AlertRepository(db)
     agent_repo = AgentRepository(db)
@@ -1062,7 +1129,7 @@ async def acknowledge_all_alerts_htmx(request: Request, db: Session = Depends(ge
 
 
 @router.delete("/alerts/{alert_id}", response_class=HTMLResponse)
-async def delete_alert_htmx(alert_id: int, db: Session = Depends(get_db)):
+async def delete_alert_htmx(alert_id: int, _auth: None = Depends(_require_session), db: Session = Depends(get_db)):
     """Delete alert via htmx."""
     repo = AlertRepository(db)
     if not repo.delete(alert_id):
@@ -1071,7 +1138,7 @@ async def delete_alert_htmx(alert_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/alerts/{alert_id}/block-ip", response_class=HTMLResponse)
-async def block_ip_from_alert_htmx(request: Request, alert_id: int, db: Session = Depends(get_db)):
+async def block_ip_from_alert_htmx(request: Request, alert_id: int, _auth: None = Depends(_require_session), db: Session = Depends(get_db)):
     """Block IP from alert and acknowledge the alert."""
     alert_repo = AlertRepository(db)
     blocklist_repo = BlocklistRepository(db)
@@ -1112,7 +1179,7 @@ async def block_ip_from_alert_htmx(request: Request, alert_id: int, db: Session 
 
 # HTMX partial endpoints for live updates
 @router.get("/partials/agents-status", response_class=HTMLResponse)
-async def agents_status_partial(request: Request, db: Session = Depends(get_db)):
+async def agents_status_partial(request: Request, _auth: None = Depends(_require_session), db: Session = Depends(get_db)):
     """Partial for agent status updates."""
     agent_repo = AgentRepository(db)
     agents = agent_repo.get_all()
@@ -1123,7 +1190,7 @@ async def agents_status_partial(request: Request, db: Session = Depends(get_db))
 
 
 @router.get("/partials/stats-summary", response_class=HTMLResponse)
-async def stats_summary_partial(request: Request, period: str = "24h", db: Session = Depends(get_db)):
+async def stats_summary_partial(request: Request, period: str = "24h", _auth: None = Depends(_require_session), db: Session = Depends(get_db)):
     """Partial for stats summary updates."""
     stat_repo = ConnectionStatRepository(db)
     blocklist_repo = BlocklistRepository(db)
@@ -1145,7 +1212,7 @@ async def stats_summary_partial(request: Request, period: str = "24h", db: Sessi
 # ============================================================================
 
 @router.get("/email", response_class=HTMLResponse)
-async def email_page(request: Request, db: Session = Depends(get_db)):
+async def email_page(request: Request, _auth: None = Depends(_require_session), db: Session = Depends(get_db)):
     """Email proxy management page."""
     config_repo = EmailConfigRepository(db)
     user_repo = EmailUserRepository(db)
@@ -1407,7 +1474,7 @@ async def create_email_user_htmx(
 
 
 @router.delete("/email/users/{user_id}", response_class=HTMLResponse)
-async def delete_email_user_htmx(user_id: int, db: Session = Depends(get_db)):
+async def delete_email_user_htmx(user_id: int, _auth: None = Depends(_require_session), db: Session = Depends(get_db)):
     """Delete email user via htmx."""
     repo = EmailUserRepository(db)
     if not repo.delete(user_id):
@@ -1416,7 +1483,7 @@ async def delete_email_user_htmx(user_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/email/users/{user_id}/toggle", response_class=HTMLResponse)
-async def toggle_email_user_htmx(request: Request, user_id: int, db: Session = Depends(get_db)):
+async def toggle_email_user_htmx(request: Request, user_id: int, _auth: None = Depends(_require_session), db: Session = Depends(get_db)):
     """Toggle email user enabled status via htmx."""
     user_repo = EmailUserRepository(db)
     agent_repo = AgentRepository(db)
@@ -1467,7 +1534,7 @@ async def add_email_blocklist_htmx(
 
 
 @router.delete("/email/blocklist/{entry_id}", response_class=HTMLResponse)
-async def remove_email_blocklist_htmx(entry_id: int, db: Session = Depends(get_db)):
+async def remove_email_blocklist_htmx(entry_id: int, _auth: None = Depends(_require_session), db: Session = Depends(get_db)):
     """Remove entry from email blocklist via htmx."""
     repo = EmailBlocklistRepository(db)
     if not repo.remove(entry_id):
@@ -1476,7 +1543,7 @@ async def remove_email_blocklist_htmx(entry_id: int, db: Session = Depends(get_d
 
 
 @router.post("/email/apply", response_class=HTMLResponse)
-async def apply_email_config_htmx(request: Request, db: Session = Depends(get_db)):
+async def apply_email_config_htmx(request: Request, _auth: None = Depends(_require_session), db: Session = Depends(get_db)):
     """Push email config sync to all deployed agents."""
     manager = EmailManager(db)
     results = await manager.sync_all_agents()
@@ -1533,7 +1600,7 @@ async def create_sasl_user_htmx(
 
 
 @router.delete("/email/sasl/{user_id}", response_class=HTMLResponse)
-async def delete_sasl_user_htmx(user_id: int, db: Session = Depends(get_db)):
+async def delete_sasl_user_htmx(user_id: int, _auth: None = Depends(_require_session), db: Session = Depends(get_db)):
     """Delete SASL user via htmx."""
     manager = EmailManager(db)
     if not manager.delete_sasl_user(user_id):
@@ -1542,7 +1609,7 @@ async def delete_sasl_user_htmx(user_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/email/sasl/{user_id}/toggle", response_class=HTMLResponse)
-async def toggle_sasl_user_htmx(request: Request, user_id: int, db: Session = Depends(get_db)):
+async def toggle_sasl_user_htmx(request: Request, user_id: int, _auth: None = Depends(_require_session), db: Session = Depends(get_db)):
     """Toggle SASL user enabled status via htmx."""
     from controller.database.repositories import EmailSaslUserRepository
     sasl_repo = EmailSaslUserRepository(db)
@@ -1564,7 +1631,7 @@ async def toggle_sasl_user_htmx(request: Request, user_id: int, db: Session = De
 
 
 @router.post("/email/sasl/{user_id}/reset", response_class=HTMLResponse)
-async def reset_sasl_password_htmx(request: Request, user_id: int, db: Session = Depends(get_db)):
+async def reset_sasl_password_htmx(request: Request, user_id: int, _auth: None = Depends(_require_session), db: Session = Depends(get_db)):
     """Reset SASL user password via htmx."""
     from controller.database.repositories import EmailSaslUserRepository
     manager = EmailManager(db)
@@ -1614,7 +1681,7 @@ async def create_domain_htmx(
 
 
 @router.delete("/email/domains/{domain_id}", response_class=HTMLResponse)
-async def delete_domain_htmx(domain_id: int, db: Session = Depends(get_db)):
+async def delete_domain_htmx(domain_id: int, _auth: None = Depends(_require_session), db: Session = Depends(get_db)):
     """Delete relay domain via htmx."""
     manager = EmailManager(db)
     if not manager.delete_domain(domain_id):
@@ -1623,7 +1690,7 @@ async def delete_domain_htmx(domain_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/email/domains/{domain_id}/toggle", response_class=HTMLResponse)
-async def toggle_domain_htmx(request: Request, domain_id: int, db: Session = Depends(get_db)):
+async def toggle_domain_htmx(request: Request, domain_id: int, _auth: None = Depends(_require_session), db: Session = Depends(get_db)):
     """Toggle domain enabled status via htmx."""
     from controller.database.repositories import EmailDomainRepository
     domain_repo = EmailDomainRepository(db)
@@ -1642,7 +1709,7 @@ async def toggle_domain_htmx(request: Request, domain_id: int, db: Session = Dep
 
 
 @router.post("/email/domains/sync", response_class=HTMLResponse)
-async def sync_mailcow_domains_htmx(request: Request, db: Session = Depends(get_db)):
+async def sync_mailcow_domains_htmx(request: Request, _auth: None = Depends(_require_session), db: Session = Depends(get_db)):
     """Sync domains from Mailcow via htmx."""
     from controller.database.repositories import EmailDomainRepository
     domain_repo = EmailDomainRepository(db)
@@ -1666,7 +1733,7 @@ async def sync_mailcow_domains_htmx(request: Request, db: Session = Depends(get_
 # =============================================================================
 
 @router.get("/email/mailcow/mailboxes", response_class=HTMLResponse)
-async def get_mailcow_mailboxes_htmx(request: Request, db: Session = Depends(get_db)):
+async def get_mailcow_mailboxes_htmx(request: Request, _auth: None = Depends(_require_session), db: Session = Depends(get_db)):
     """Fetch, sync and display Mailcow mailboxes via htmx."""
     manager = EmailManager(db)
     # Sync from Mailcow (updates cache)
@@ -1681,7 +1748,7 @@ async def get_mailcow_mailboxes_htmx(request: Request, db: Session = Depends(get
 
 
 @router.get("/email/mailcow/aliases", response_class=HTMLResponse)
-async def get_mailcow_aliases_htmx(request: Request, db: Session = Depends(get_db)):
+async def get_mailcow_aliases_htmx(request: Request, _auth: None = Depends(_require_session), db: Session = Depends(get_db)):
     """Fetch, sync and display Mailcow aliases via htmx."""
     manager = EmailManager(db)
     # Sync from Mailcow (updates cache)
@@ -1719,7 +1786,7 @@ async def create_mailcow_alias_htmx(
 
 
 @router.delete("/email/mailcow/aliases/{alias_id}", response_class=HTMLResponse)
-async def delete_mailcow_alias_htmx(alias_id: int, db: Session = Depends(get_db)):
+async def delete_mailcow_alias_htmx(alias_id: int, _auth: None = Depends(_require_session), db: Session = Depends(get_db)):
     """Delete Mailcow alias via htmx."""
     manager = EmailManager(db)
     success, message = await manager.delete_mailcow_alias(alias_id)

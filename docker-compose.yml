@@ -1,0 +1,70 @@
+services:
+
+  # ─── Controller ────────────────────────────────────────────────────────────
+  controller:
+    build:
+      context: .
+      dockerfile: Dockerfile.controller
+    image: nekoproxy-controller:latest
+    container_name: nekoproxy-controller
+    restart: unless-stopped
+    ports:
+      - "8001:8001"          # Web UI + admin API
+    volumes:
+      - controller-data:/data          # SQLite DB + agent binary uploads
+      # Uncomment to use TLS certificates (also set NEKO_SSL_CERTFILE / NEKO_SSL_KEYFILE):
+      # - ./certs:/certs:ro
+    env_file:
+      - path: docker/controller.env
+        required: false        # Won't error if file is missing; use env vars below instead
+    environment:
+      NEKO_DATABASE_URL: sqlite:////data/nekoproxy.db
+      NEKO_UPLOADS_DIR: /data/uploads/agent
+      # Set these here or in docker/controller.env:
+      # NEKO_API_TOKEN: your-strong-admin-token
+      # NEKO_CONTROLLER_TOKEN: your-strong-controller-token
+      # NEKO_AGENT_SECRET: shared-registration-secret
+    healthcheck:
+      test: ["CMD", "python", "-c",
+             "import urllib.request; urllib.request.urlopen('http://localhost:8001/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  # ─── Agent (example — add more services for additional agents) ─────────────
+  agent:
+    build:
+      context: .
+      dockerfile: Dockerfile.agent
+    image: nekoproxy-agent:latest
+    container_name: nekoproxy-agent
+    restart: unless-stopped
+    depends_on:
+      controller:
+        condition: service_healthy
+    ports:
+      - "8002:8002"          # ControlAPI (controller → agent push; internal only)
+    volumes:
+      - agent-data:/data     # Persists agent_token.txt across container restarts
+    cap_add:
+      - NET_ADMIN            # Required for iptables firewall rule management
+    env_file:
+      - path: docker/agent.env
+        required: false
+    environment:
+      NEKO_AGENT_CONTROLLER_URL: http://controller:8001
+      # Bind ControlAPI to all container interfaces so the controller can reach it
+      # over the Docker network. Docker networking prevents public-internet access.
+      NEKO_AGENT_CONTROL_BIND_IP: "0.0.0.0"
+      NEKO_AGENT_INSTALL_DIR: /data
+      # Set these here or in docker/agent.env:
+      # NEKO_AGENT_CONTROLLER_TOKEN: your-strong-controller-token  (match controller)
+      # NEKO_AGENT_SECRET: shared-registration-secret
+
+    # Uncomment to let the agent manage the *host* iptables instead of the container's:
+    # network_mode: host
+
+volumes:
+  controller-data:
+  agent-data:

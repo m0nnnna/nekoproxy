@@ -11,6 +11,7 @@ from datetime import datetime
 import httpx
 from sqlalchemy.orm import Session
 from sqlalchemy import func
+from controller.core.agent_sync import _controller_token, _agent_api_ssl_verify, get_agent_base_url
 
 from controller.database.repositories import (
     EmailConfigRepository, EmailUserRepository, EmailBlocklistRepository,
@@ -65,7 +66,8 @@ class EmailManager:
                 self.config_repo.update_deployment_status(config.id, EmailDeploymentStatus.FAILED)
                 return False, "Internal agent (no WireGuard IP): deploy not available"
             # Trigger deployment on agent via control API
-            url = f"http://{agent.wireguard_ip}:8002/deploy-email"
+            _base = get_agent_base_url(agent) or f"http://{agent.wireguard_ip}:8002"
+            url = f"{_base.rstrip('/')}/deploy-email"
 
             # Deploy configuration:
             # - hostname: Agent's FQDN (for Postfix myhostname and Let's Encrypt SSL)
@@ -84,8 +86,10 @@ class EmailManager:
             logger.info(f"  Mailcow IP: {deploy_config['mailcow_ip']}:{deploy_config['mailcow_port']}")
             logger.info(f"  Proxy IP: {deploy_config['proxy_ip']}")
 
-            async with httpx.AsyncClient(timeout=120.0) as client:  # 2 min timeout (no SSL cert generation)
-                response = await client.post(url, json=deploy_config)
+            _t = _controller_token()
+            _ctrl_h = {"X-Controller-Token": _t} if _t else {}
+            async with httpx.AsyncClient(timeout=120.0, verify=_agent_api_ssl_verify()) as client:  # 2 min timeout (no SSL cert generation)
+                response = await client.post(url, json=deploy_config, headers=_ctrl_h)
                 response.raise_for_status()
 
             self.config_repo.update_deployment_status(config.id, EmailDeploymentStatus.DEPLOYED)
@@ -547,10 +551,13 @@ class EmailManager:
             agent = self.agent_repo.get_by_id(config.agent_id)
             if not agent or not agent.wireguard_ip:
                 return None
-            url = f"http://{agent.wireguard_ip}:8002/trigger-email-sync"
+            _base_e = get_agent_base_url(agent) or f"http://{agent.wireguard_ip}:8002"
+            url = f"{_base_e.rstrip('/')}/trigger-email-sync"
             try:
-                async with httpx.AsyncClient(timeout=5.0) as client:
-                    response = await client.post(url)
+                _t2 = _controller_token()
+                _h2 = {"X-Controller-Token": _t2} if _t2 else {}
+                async with httpx.AsyncClient(timeout=5.0, verify=_agent_api_ssl_verify()) as client:
+                    response = await client.post(url, headers=_h2)
                     return response.status_code == 200
             except Exception as e:
                 logger.warning(f"Failed to sync email config to agent {agent.hostname}: {e}")
@@ -573,7 +580,8 @@ class EmailManager:
         if not agent or not agent.wireguard_ip:
             return False
 
-        url = f"http://{agent.wireguard_ip}:8002/trigger-email-sync"
+        _base_e2 = get_agent_base_url(agent) or f"http://{agent.wireguard_ip}:8002"
+        url = f"{_base_e2.rstrip('/')}/trigger-email-sync"
         try:
             async with httpx.AsyncClient(timeout=5.0) as client:
                 response = await client.post(url)

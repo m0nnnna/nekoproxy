@@ -1,0 +1,36 @@
+FROM python:3.12-slim
+
+# iptables + iproute2 are required for the Linux firewall manager
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    iptables \
+    iproute2 \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Install Python dependencies
+RUN pip install --no-cache-dir \
+    "httpx>=0.26.0" \
+    "psutil>=5.9.0" \
+    "aiohttp>=3.9.0" \
+    "aiofiles>=23.0.0" \
+    "pydantic>=2.0.0" \
+    "pydantic-settings>=2.0.0"
+
+# Copy source packages
+COPY agent/ ./agent/
+COPY shared/ ./shared/
+
+# Persistent data directory (agent_token.txt, certs, etc.)
+RUN mkdir -p /data
+
+# ControlAPI listens on 8002
+# NOTE: in Docker the control API is accessible only within the Docker network.
+# When NEKO_AGENT_CONTROL_BIND_IP=0.0.0.0 it binds to all container interfaces;
+# Docker networking keeps it isolated from the public internet.
+EXPOSE 8002
+
+# Default install dir — used for agent_token.txt persistence
+ENV NEKO_AGENT_INSTALL_DIR=/data
+
+CMD ["python", "-m", "agent.main"]

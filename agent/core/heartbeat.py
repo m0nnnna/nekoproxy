@@ -26,10 +26,20 @@ class HeartbeatSender:
         self._task: Optional[asyncio.Task] = None
         self._client: Optional[httpx.AsyncClient] = None
 
+    def _auth_headers(self) -> dict:
+        """Return authentication headers for controller requests."""
+        if settings.agent_token:
+            return {"X-Agent-Token": settings.agent_token}
+        return {}
+
+    def _ssl_verify(self):
+        """Return SSL verification setting for controller connection."""
+        return getattr(settings, "controller_ssl_ca_cert", None) or getattr(settings, "controller_ssl_verify", False)
+
     async def start(self):
         """Start the heartbeat loop."""
         self._running = True
-        self._client = httpx.AsyncClient(timeout=10.0)
+        self._client = httpx.AsyncClient(timeout=10.0, verify=self._ssl_verify())
         self._task = asyncio.create_task(self._heartbeat_loop())
         logger.info(f"Heartbeat sender started (interval: {settings.heartbeat_interval}s)")
 
@@ -74,7 +84,7 @@ class HeartbeatSender:
         url = f"{settings.controller_url}/api/v1/agents/{self.agent_id}/heartbeat"
 
         try:
-            response = await self._client.post(url, json=heartbeat_data)
+            response = await self._client.post(url, json=heartbeat_data, headers=self._auth_headers())
             response.raise_for_status()
             logger.debug(f"Heartbeat sent: {active_connections} connections")
         except httpx.HTTPStatusError as e:

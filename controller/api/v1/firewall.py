@@ -3,13 +3,14 @@ from sqlalchemy.orm import Session
 
 from controller.database.database import get_db
 from controller.database.repositories import FirewallRuleRepository
+from controller.core.auth import require_api_token
 from shared.models import FirewallRuleCreate, FirewallRuleUpdate, FirewallRuleResponse
 
 router = APIRouter()
 
 
 @router.post("", response_model=FirewallRuleResponse, status_code=201)
-def create_firewall_rule(rule: FirewallRuleCreate, db: Session = Depends(get_db)):
+def create_firewall_rule(rule: FirewallRuleCreate, db: Session = Depends(get_db), _auth: None = Depends(require_api_token)):
     """Create a new firewall rule."""
     repo = FirewallRuleRepository(db)
 
@@ -44,7 +45,7 @@ def create_firewall_rule(rule: FirewallRuleCreate, db: Session = Depends(get_db)
 
 
 @router.get("", response_model=list[FirewallRuleResponse])
-def list_firewall_rules(enabled_only: bool = False, interface: str = None, db: Session = Depends(get_db)):
+def list_firewall_rules(enabled_only: bool = False, interface: str = None, db: Session = Depends(get_db), _auth: None = Depends(require_api_token)):
     """List all firewall rules."""
     repo = FirewallRuleRepository(db)
 
@@ -72,7 +73,7 @@ def list_firewall_rules(enabled_only: bool = False, interface: str = None, db: S
 
 
 @router.get("/{rule_id}", response_model=FirewallRuleResponse)
-def get_firewall_rule(rule_id: int, db: Session = Depends(get_db)):
+def get_firewall_rule(rule_id: int, db: Session = Depends(get_db), _auth: None = Depends(require_api_token)):
     """Get a specific firewall rule."""
     repo = FirewallRuleRepository(db)
     rule = repo.get_by_id(rule_id)
@@ -93,7 +94,7 @@ def get_firewall_rule(rule_id: int, db: Session = Depends(get_db)):
 
 
 @router.put("/{rule_id}", response_model=FirewallRuleResponse)
-def update_firewall_rule(rule_id: int, rule_update: FirewallRuleUpdate, db: Session = Depends(get_db)):
+def update_firewall_rule(rule_id: int, rule_update: FirewallRuleUpdate, db: Session = Depends(get_db), _auth: None = Depends(require_api_token)):
     """Update a firewall rule."""
     repo = FirewallRuleRepository(db)
 
@@ -130,7 +131,7 @@ def update_firewall_rule(rule_id: int, rule_update: FirewallRuleUpdate, db: Sess
 
 
 @router.delete("/{rule_id}")
-def delete_firewall_rule(rule_id: int, db: Session = Depends(get_db)):
+def delete_firewall_rule(rule_id: int, db: Session = Depends(get_db), _auth: None = Depends(require_api_token)):
     """Delete a firewall rule."""
     repo = FirewallRuleRepository(db)
     if not repo.delete(rule_id):
@@ -139,7 +140,7 @@ def delete_firewall_rule(rule_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/{rule_id}/enable")
-def enable_firewall_rule(rule_id: int, db: Session = Depends(get_db)):
+def enable_firewall_rule(rule_id: int, db: Session = Depends(get_db), _auth: None = Depends(require_api_token)):
     """Enable a firewall rule."""
     repo = FirewallRuleRepository(db)
     rule = repo.update(rule_id, enabled=True)
@@ -149,7 +150,7 @@ def enable_firewall_rule(rule_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/{rule_id}/disable")
-def disable_firewall_rule(rule_id: int, db: Session = Depends(get_db)):
+def disable_firewall_rule(rule_id: int, db: Session = Depends(get_db), _auth: None = Depends(require_api_token)):
     """Disable a firewall rule."""
     repo = FirewallRuleRepository(db)
     rule = repo.update(rule_id, enabled=False)

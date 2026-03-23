@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Header
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import Optional
@@ -6,9 +6,44 @@ from datetime import datetime
 
 from controller.database.database import get_db
 from controller.database.repositories import ConnectionStatRepository, EmailStatRepository, FirewallStatRepository
+from controller.core.auth import require_api_token, require_agent_token
 from shared.models import StatsReport
 
 router = APIRouter()
+
+
+def _any_agent_auth(
+    agent_id: int = 0,
+    x_agent_token: Optional[str] = Header(default=None, alias="X-Agent-Token"),
+    x_api_token: Optional[str] = Header(default=None, alias="X-API-Token"),
+    authorization: Optional[str] = Header(default=None),
+    db: Session = Depends(get_db),
+):
+    """Accept either an agent token (matching any registered agent) or admin token.
+    Used for batch report endpoints where agent_id is in the body, not the path.
+    """
+    from controller.database.repositories import AgentRepository
+    import hmac
+    from controller.core.auth import _get_active_api_token
+
+    # Try admin token first
+    admin_token = x_api_token
+    if not admin_token and authorization and authorization.lower().startswith("bearer "):
+        admin_token = authorization[7:].strip()
+    active_admin = _get_active_api_token(db)
+    if active_admin and admin_token and hmac.compare_digest(admin_token, active_admin):
+        return
+
+    # Try per-agent token against all agents (since agent_id is in body, not path)
+    if x_agent_token:
+        from controller.database.models import Agent
+        from fastapi import HTTPException
+        agents = db.query(Agent).filter(Agent.agent_token == x_agent_token).first()
+        if agents:
+            return
+
+    from fastapi import HTTPException
+    raise HTTPException(status_code=401, detail="Invalid or missing token")
 
 
 class StatsSummary(BaseModel):
@@ -88,7 +123,7 @@ class FirewallStatsReportRequest(BaseModel):
 
 
 @router.post("/connections")
-def report_connections(report: StatsReport, db: Session = Depends(get_db)):
+def report_connections(report: StatsReport, db: Session = Depends(get_db), _auth: None = Depends(_any_agent_auth)):
     """Receive connection statistics from an agent."""
     repo = ConnectionStatRepository(db)
 
@@ -118,7 +153,7 @@ def report_connections(report: StatsReport, db: Session = Depends(get_db)):
 
 
 @router.get("/summary", response_model=StatsSummary)
-def get_stats_summary(hours: Optional[int] = 24, db: Session = Depends(get_db)):
+def get_stats_summary(hours: Optional[int] = 24, db: Session = Depends(get_db), _auth: None = Depends(require_api_token)):
     """Get aggregated statistics for the specified period. Use hours=0 for lifetime."""
     repo = ConnectionStatRepository(db)
     # Treat 0 as lifetime (None)
@@ -128,7 +163,7 @@ def get_stats_summary(hours: Optional[int] = 24, db: Session = Depends(get_db)):
 
 
 @router.get("/recent", response_model=list[ConnectionStatResponse])
-def get_recent_stats(hours: int = 24, limit: int = 100, db: Session = Depends(get_db)):
+def get_recent_stats(hours: int = 24, limit: int = 100, db: Session = Depends(get_db), _auth: None = Depends(require_api_token)):
     """Get recent connection statistics."""
     repo = ConnectionStatRepository(db)
     stats = repo.get_recent(hours=hours, limit=limit)
@@ -150,7 +185,7 @@ def get_recent_stats(hours: int = 24, limit: int = 100, db: Session = Depends(ge
 
 
 @router.get("/agent/{agent_id}", response_model=list[ConnectionStatResponse])
-def get_agent_stats(agent_id: int, limit: int = 100, db: Session = Depends(get_db)):
+def get_agent_stats(agent_id: int, limit: int = 100, db: Session = Depends(get_db), _auth: None = Depends(require_api_token)):
     """Get connection statistics for a specific agent."""
     repo = ConnectionStatRepository(db)
     stats = repo.get_by_agent(agent_id, limit=limit)
@@ -174,7 +209,7 @@ def get_agent_stats(agent_id: int, limit: int = 100, db: Session = Depends(get_d
 # Email Stats Endpoints
 
 @router.post("/email")
-def report_email_stats(report: EmailStatsReport, db: Session = Depends(get_db)):
+def report_email_stats(report: EmailStatsReport, db: Session = Depends(get_db), _auth: None = Depends(_any_agent_auth)):
     """Receive email statistics from an agent."""
     repo = EmailStatRepository(db)
 
@@ -207,7 +242,7 @@ def report_email_stats(report: EmailStatsReport, db: Session = Depends(get_db)):
 
 
 @router.get("/email/summary", response_model=EmailStatsSummary)
-def get_email_stats_summary(hours: Optional[int] = 24, db: Session = Depends(get_db)):
+def get_email_stats_summary(hours: Optional[int] = 24, db: Session = Depends(get_db), _auth: None = Depends(require_api_token)):
     """Get aggregated email statistics for the specified period. Use hours=0 for lifetime."""
     repo = EmailStatRepository(db)
     # Treat 0 as lifetime (None)
@@ -217,7 +252,7 @@ def get_email_stats_summary(hours: Optional[int] = 24, db: Session = Depends(get
 
 
 @router.get("/email/recent", response_model=list[EmailStatResponse])
-def get_recent_email_stats(hours: int = 24, limit: int = 100, db: Session = Depends(get_db)):
+def get_recent_email_stats(hours: int = 24, limit: int = 100, db: Session = Depends(get_db), _auth: None = Depends(require_api_token)):
     """Get recent email statistics."""
     repo = EmailStatRepository(db)
     stats = repo.get_recent(hours=hours, limit=limit)
@@ -240,7 +275,7 @@ def get_recent_email_stats(hours: int = 24, limit: int = 100, db: Session = Depe
 
 
 @router.get("/email/agent/{agent_id}", response_model=list[EmailStatResponse])
-def get_agent_email_stats(agent_id: int, limit: int = 100, db: Session = Depends(get_db)):
+def get_agent_email_stats(agent_id: int, limit: int = 100, db: Session = Depends(get_db), _auth: None = Depends(require_api_token)):
     """Get email statistics for a specific agent."""
     repo = EmailStatRepository(db)
     stats = repo.get_by_agent(agent_id, limit=limit)
@@ -265,7 +300,7 @@ def get_agent_email_stats(agent_id: int, limit: int = 100, db: Session = Depends
 # Firewall Stats Endpoints
 
 @router.post("/firewall")
-def report_firewall_stats(report: FirewallStatsReportRequest, db: Session = Depends(get_db)):
+def report_firewall_stats(report: FirewallStatsReportRequest, db: Session = Depends(get_db), _auth: None = Depends(_any_agent_auth)):
     """Receive firewall (iptables) statistics from an agent."""
     repo = FirewallStatRepository(db)
 
@@ -296,7 +331,7 @@ def report_firewall_stats(report: FirewallStatsReportRequest, db: Session = Depe
 
 
 @router.get("/firewall/summary", response_model=FirewallStatsSummary)
-def get_firewall_stats_summary(hours: Optional[int] = 24, db: Session = Depends(get_db)):
+def get_firewall_stats_summary(hours: Optional[int] = 24, db: Session = Depends(get_db), _auth: None = Depends(require_api_token)):
     """Get aggregated firewall statistics. Use hours=0 for lifetime."""
     repo = FirewallStatRepository(db)
     if hours == 0:
@@ -305,7 +340,7 @@ def get_firewall_stats_summary(hours: Optional[int] = 24, db: Session = Depends(
 
 
 @router.get("/firewall/recent", response_model=list[FirewallStatResponse])
-def get_recent_firewall_stats(hours: int = 24, limit: int = 100, db: Session = Depends(get_db)):
+def get_recent_firewall_stats(hours: int = 24, limit: int = 100, db: Session = Depends(get_db), _auth: None = Depends(require_api_token)):
     """Get recent firewall statistics."""
     repo = FirewallStatRepository(db)
     stats = repo.get_recent(hours=hours, limit=limit)

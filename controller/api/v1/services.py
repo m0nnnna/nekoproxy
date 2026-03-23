@@ -3,13 +3,14 @@ from sqlalchemy.orm import Session
 
 from controller.database.database import get_db
 from controller.database.repositories import ServiceRepository
+from controller.core.auth import require_api_token
 from shared.models import ServiceCreate, ServiceUpdate, ServiceResponse
 
 router = APIRouter()
 
 
 @router.post("", response_model=ServiceResponse, status_code=201)
-def create_service(service: ServiceCreate, db: Session = Depends(get_db)):
+def create_service(service: ServiceCreate, db: Session = Depends(get_db), _auth: None = Depends(require_api_token)):
     """Create a new service definition."""
     repo = ServiceRepository(db)
 
@@ -48,7 +49,7 @@ def create_service(service: ServiceCreate, db: Session = Depends(get_db)):
 
 
 @router.get("", response_model=list[ServiceResponse])
-def list_services(db: Session = Depends(get_db)):
+def list_services(db: Session = Depends(get_db), _auth: None = Depends(require_api_token)):
     """List all service definitions."""
     repo = ServiceRepository(db)
     services = repo.get_all()
@@ -69,7 +70,7 @@ def list_services(db: Session = Depends(get_db)):
 
 
 @router.get("/{service_id}", response_model=ServiceResponse)
-def get_service(service_id: int, db: Session = Depends(get_db)):
+def get_service(service_id: int, db: Session = Depends(get_db), _auth: None = Depends(require_api_token)):
     """Get a specific service."""
     repo = ServiceRepository(db)
     service = repo.get_by_id(service_id)
@@ -89,7 +90,7 @@ def get_service(service_id: int, db: Session = Depends(get_db)):
 
 
 @router.put("/{service_id}", response_model=ServiceResponse)
-def update_service(service_id: int, service_update: ServiceUpdate, db: Session = Depends(get_db)):
+def update_service(service_id: int, service_update: ServiceUpdate, db: Session = Depends(get_db), _auth: None = Depends(require_api_token)):
     """Update a service definition."""
     repo = ServiceRepository(db)
 
@@ -130,7 +131,7 @@ def update_service(service_id: int, service_update: ServiceUpdate, db: Session =
 
 
 @router.delete("/{service_id}")
-def delete_service(service_id: int, db: Session = Depends(get_db)):
+def delete_service(service_id: int, db: Session = Depends(get_db), _auth: None = Depends(require_api_token)):
     """Delete a service and its assignments."""
     repo = ServiceRepository(db)
     if not repo.delete(service_id):

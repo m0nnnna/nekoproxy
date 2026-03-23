@@ -27,10 +27,18 @@ class ConfigSync:
         self._client: Optional[httpx.AsyncClient] = None
         self._current_version: int = 0
 
+    def _auth_headers(self) -> dict:
+        if settings.agent_token:
+            return {"X-Agent-Token": settings.agent_token}
+        return {}
+
+    def _ssl_verify(self):
+        return getattr(settings, "controller_ssl_ca_cert", None) or getattr(settings, "controller_ssl_verify", False)
+
     async def start(self):
         """Start configuration sync loop."""
         self._running = True
-        self._client = httpx.AsyncClient(timeout=10.0)
+        self._client = httpx.AsyncClient(timeout=10.0, verify=self._ssl_verify())
         self._task = asyncio.create_task(self._sync_loop())
         logger.info("Config sync started")
 
@@ -52,7 +60,7 @@ class ConfigSync:
         url = f"{settings.controller_url}/api/v1/agents/{self.agent_id}/config"
 
         try:
-            response = await self._client.get(url)
+            response = await self._client.get(url, headers=self._auth_headers())
             response.raise_for_status()
             data = response.json()
             return AgentConfig(**data)

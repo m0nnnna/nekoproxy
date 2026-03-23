@@ -48,6 +48,24 @@ class Settings(BaseSettings):
     # Agent binary uploads (for push-update): directory to store uploaded agent binaries
     uploads_dir: str = "./uploads/agent"
 
+    # Security: admin API token (required for all API requests).
+    # Auto-generated on first run and printed to the log if not provided.
+    api_token: Optional[str] = None
+
+    # Security: token the controller sends to agents when calling their ControlAPI.
+    # Auto-generated on first run. Set NEKO_CONTROLLER_TOKEN to override.
+    controller_token: Optional[str] = None
+
+    # TLS: paths to PEM certificate and key for HTTPS.
+    # If both are set, uvicorn listens with TLS (recommended for production).
+    ssl_certfile: Optional[str] = None
+    ssl_keyfile: Optional[str] = None
+
+    # When calling agents' ControlAPI over HTTPS, verify their certificate.
+    # Defaults to False because agents use auto-generated self-signed certs.
+    # Set to True only when agents use CA-signed certs or a shared CA is configured.
+    agent_api_ssl_verify: bool = False
+
     # Web UI - paths resolved at runtime
     @property
     def templates_dir(self) -> Path:

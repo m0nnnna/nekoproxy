@@ -1,16 +1,43 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Header
 from sqlalchemy.orm import Session
+from typing import Optional
 
 from controller.database.database import get_db
 from controller.database.repositories import AlertRepository, AgentRepository
+from controller.core.auth import require_api_token
 from shared.models import AlertCreate, AlertResponse
 from shared.models.common import AlertSeverity
 
 router = APIRouter()
 
+def _alert_create_auth(
+    x_agent_token: Optional[str] = Header(default=None, alias="X-Agent-Token"),
+    x_api_token: Optional[str] = Header(default=None, alias="X-API-Token"),
+    authorization: Optional[str] = Header(default=None),
+    db: Session = Depends(get_db),
+):
+    """Accept agent token or admin token for alert creation (agents report alerts)."""
+    import hmac
+    from controller.core.auth import _get_active_api_token
+    from controller.database.models import Agent
+    from fastapi import HTTPException
+
+    admin_token = x_api_token
+    if not admin_token and authorization and authorization.lower().startswith("bearer "):
+        admin_token = authorization[7:].strip()
+    active_admin = _get_active_api_token(db)
+    if active_admin and admin_token and hmac.compare_digest(admin_token, active_admin):
+        return
+    if x_agent_token:
+        agent = db.query(Agent).filter(Agent.agent_token == x_agent_token).first()
+        if agent:
+            return
+    raise HTTPException(status_code=401, detail="Invalid or missing token")
+
+
 
 @router.post("", response_model=AlertResponse, status_code=201)
-def create_alert(alert: AlertCreate, db: Session = Depends(get_db)):
+def create_alert(alert: AlertCreate, db: Session = Depends(get_db), _auth: None = Depends(_alert_create_auth)):
     """Create a new alert (typically called by agents)."""
     repo = AlertRepository(db)
 
@@ -52,7 +79,8 @@ def list_alerts(
     severity: AlertSeverity = None,
     source_ip: str = None,
     limit: int = 100,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    _auth: None = Depends(require_api_token),
 ):
     """List alerts with optional filters."""
     repo = AlertRepository(db)
@@ -93,7 +121,7 @@ def list_alerts(
 
 
 @router.get("/counts")
-def get_alert_counts(db: Session = Depends(get_db)):
+def get_alert_counts(db: Session = Depends(get_db), _auth: None = Depends(require_api_token)):
     """Get count of unacknowledged alerts by severity."""
     repo = AlertRepository(db)
     counts = repo.get_counts_by_severity()
@@ -102,7 +130,7 @@ def get_alert_counts(db: Session = Depends(get_db)):
 
 
 @router.get("/{alert_id}", response_model=AlertResponse)
-def get_alert(alert_id: int, db: Session = Depends(get_db)):
+def get_alert(alert_id: int, db: Session = Depends(get_db), _auth: None = Depends(require_api_token)):
     """Get a specific alert."""
     repo = AlertRepository(db)
     agent_repo = AgentRepository(db)
@@ -133,7 +161,7 @@ def get_alert(alert_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/{alert_id}/acknowledge")
-def acknowledge_alert(alert_id: int, db: Session = Depends(get_db)):
+def acknowledge_alert(alert_id: int, db: Session = Depends(get_db), _auth: None = Depends(require_api_token)):
     """Acknowledge an alert."""
     repo = AlertRepository(db)
     alert = repo.acknowledge(alert_id)
@@ -143,7 +171,7 @@ def acknowledge_alert(alert_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/acknowledge-all")
-def acknowledge_all_alerts(db: Session = Depends(get_db)):
+def acknowledge_all_alerts(db: Session = Depends(get_db), _auth: None = Depends(require_api_token)):
     """Acknowledge all unacknowledged alerts."""
     repo = AlertRepository(db)
     count = repo.acknowledge_all()
@@ -151,7 +179,7 @@ def acknowledge_all_alerts(db: Session = Depends(get_db)):
 
 
 @router.delete("/{alert_id}")
-def delete_alert(alert_id: int, db: Session = Depends(get_db)):
+def delete_alert(alert_id: int, db: Session = Depends(get_db), _auth: None = Depends(require_api_token)):
     """Delete an alert."""
     repo = AlertRepository(db)
     if not repo.delete(alert_id):

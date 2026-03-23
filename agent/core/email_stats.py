@@ -85,7 +85,8 @@ class EmailStatsCollector:
             return
 
         self._running = True
-        self._client = httpx.AsyncClient(timeout=10.0)
+        ssl_verify = getattr(settings, "controller_ssl_ca_cert", None) or getattr(settings, "controller_ssl_verify", False)
+        self._client = httpx.AsyncClient(timeout=10.0, verify=ssl_verify)
 
         # Start at end of file to only process new entries
         try:
@@ -267,7 +268,8 @@ class EmailStatsCollector:
         }
 
         try:
-            response = await self._client.post(url, json=payload)
+            _headers = {"X-Agent-Token": settings.agent_token} if settings.agent_token else {}
+            response = await self._client.post(url, json=payload, headers=_headers)
             response.raise_for_status()
             logger.info(f"Reported {len(batch)} email stats to controller")
         except httpx.RequestError as e:

@@ -23,10 +23,18 @@ class StatsReporter:
         self._client: Optional[httpx.AsyncClient] = None
         self._stats_queue: deque = deque(maxlen=10000)  # Prevent unbounded growth
 
+    def _auth_headers(self) -> dict:
+        if settings.agent_token:
+            return {"X-Agent-Token": settings.agent_token}
+        return {}
+
+    def _ssl_verify(self):
+        return getattr(settings, "controller_ssl_ca_cert", None) or getattr(settings, "controller_ssl_verify", False)
+
     async def start(self):
         """Start stats reporting loop."""
         self._running = True
-        self._client = httpx.AsyncClient(timeout=10.0)
+        self._client = httpx.AsyncClient(timeout=10.0, verify=self._ssl_verify())
         self._task = asyncio.create_task(self._report_loop())
         logger.info(f"Stats reporter started (interval: {settings.stats_report_interval}s)")
 
@@ -85,7 +93,7 @@ class StatsReporter:
         }
 
         try:
-            response = await self._client.post(url, json=payload)
+            response = await self._client.post(url, json=payload, headers=self._auth_headers())
             response.raise_for_status()
             logger.info(f"Reported {len(batch)} connection stats to controller")
         except httpx.RequestError as e:

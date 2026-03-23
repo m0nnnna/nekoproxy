@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 
 from controller.database.database import get_db
 from controller.database.repositories import ServiceAssignmentRepository, ServiceRepository, AgentRepository
+from controller.core.auth import require_api_token
 from shared.models import ServiceAssignmentCreate, ServiceAssignmentUpdate, ServiceAssignmentResponse
 
 router = APIRouter()

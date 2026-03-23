@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from sqlalchemy.orm import Session
 
 from controller.database.database import get_db
+from controller.core.auth import require_api_token
 from controller.database.repositories import (
     EmailConfigRepository, EmailUserRepository, EmailBlocklistRepository, AgentRepository
 )
@@ -25,7 +26,7 @@ router = APIRouter()
 # ============================================================================
 
 @router.post("/config", response_model=EmailConfigResponse, status_code=201)
-def create_email_config(config: EmailConfigCreate, db: Session = Depends(get_db)):
+def create_email_config(config: EmailConfigCreate, db: Session = Depends(get_db), _auth: None = Depends(require_api_token)):
     """Create email (Mailcow) configuration."""
     repo = EmailConfigRepository(db)
 
@@ -46,14 +47,14 @@ def create_email_config(config: EmailConfigCreate, db: Session = Depends(get_db)
 
 
 @router.get("/config", response_model=List[EmailConfigResponse])
-def list_email_configs(db: Session = Depends(get_db)):
+def list_email_configs(db: Session = Depends(get_db), _auth: None = Depends(require_api_token)):
     """List all email configurations."""
     repo = EmailConfigRepository(db)
     return repo.get_all()
 
 
 @router.get("/config/{config_id}", response_model=EmailConfigResponse)
-def get_email_config(config_id: int, db: Session = Depends(get_db)):
+def get_email_config(config_id: int, db: Session = Depends(get_db), _auth: None = Depends(require_api_token)):
     """Get a specific email configuration."""
     repo = EmailConfigRepository(db)
     config = repo.get_by_id(config_id)
@@ -63,7 +64,7 @@ def get_email_config(config_id: int, db: Session = Depends(get_db)):
 
 
 @router.put("/config/{config_id}", response_model=EmailConfigResponse)
-def update_email_config(config_id: int, config: EmailConfigUpdate, db: Session = Depends(get_db)):
+def update_email_config(config_id: int, config: EmailConfigUpdate, db: Session = Depends(get_db), _auth: None = Depends(require_api_token)):
     """Update email configuration."""
     repo = EmailConfigRepository(db)
     updated = repo.update(config_id, **config.model_dump(exclude_unset=True))
@@ -73,7 +74,7 @@ def update_email_config(config_id: int, config: EmailConfigUpdate, db: Session =
 
 
 @router.delete("/config/{config_id}")
-def delete_email_config(config_id: int, db: Session = Depends(get_db)):
+def delete_email_config(config_id: int, db: Session = Depends(get_db), _auth: None = Depends(require_api_token)):
     """Delete email configuration."""
     repo = EmailConfigRepository(db)
     if not repo.delete(config_id):
@@ -130,7 +131,7 @@ async def deploy_email_proxy_multi(
 
 
 @router.get("/deploy/status")
-def get_deployment_status(db: Session = Depends(get_db)):
+def get_deployment_status(db: Session = Depends(get_db), _auth: None = Depends(require_api_token)):
     """Get deployment status for all configurations."""
     config_repo = EmailConfigRepository(db)
     agent_repo = AgentRepository(db)
@@ -162,7 +163,7 @@ def get_deployment_status(db: Session = Depends(get_db)):
 # ============================================================================
 
 @router.post("/users", response_model=EmailUserResponse, status_code=201)
-async def create_email_user(user: EmailUserCreate, db: Session = Depends(get_db)):
+async def create_email_user(user: EmailUserCreate, db: Session = Depends(get_db), _auth: None = Depends(require_api_token)):
     """Create email user and optionally create Mailcow mailbox."""
     repo = EmailUserRepository(db)
     manager = EmailManager(db)
@@ -205,14 +206,14 @@ async def create_email_user(user: EmailUserCreate, db: Session = Depends(get_db)
 
 
 @router.get("/users", response_model=List[EmailUserResponse])
-def list_email_users(db: Session = Depends(get_db)):
+def list_email_users(db: Session = Depends(get_db), _auth: None = Depends(require_api_token)):
     """List all email users."""
     repo = EmailUserRepository(db)
     return repo.get_all()
 
 
 @router.get("/users/{user_id}", response_model=EmailUserResponse)
-def get_email_user(user_id: int, db: Session = Depends(get_db)):
+def get_email_user(user_id: int, db: Session = Depends(get_db), _auth: None = Depends(require_api_token)):
     """Get a specific email user."""
     repo = EmailUserRepository(db)
     user = repo.get_by_id(user_id)
@@ -222,7 +223,7 @@ def get_email_user(user_id: int, db: Session = Depends(get_db)):
 
 
 @router.put("/users/{user_id}", response_model=EmailUserResponse)
-def update_email_user(user_id: int, user: EmailUserUpdate, db: Session = Depends(get_db)):
+def update_email_user(user_id: int, user: EmailUserUpdate, db: Session = Depends(get_db), _auth: None = Depends(require_api_token)):
     """Update email user."""
     repo = EmailUserRepository(db)
     updated = repo.update(user_id, **user.model_dump(exclude_unset=True))
@@ -253,7 +254,7 @@ async def delete_email_user(
 
 
 @router.post("/users/{user_id}/toggle", response_model=EmailUserResponse)
-def toggle_email_user(user_id: int, db: Session = Depends(get_db)):
+def toggle_email_user(user_id: int, db: Session = Depends(get_db), _auth: None = Depends(require_api_token)):
     """Toggle email user enabled status."""
     repo = EmailUserRepository(db)
     user = repo.get_by_id(user_id)
@@ -268,7 +269,7 @@ def toggle_email_user(user_id: int, db: Session = Depends(get_db)):
 # ============================================================================
 
 @router.post("/blocklist", response_model=EmailBlocklistResponse, status_code=201)
-def add_to_email_blocklist(entry: EmailBlocklistCreate, db: Session = Depends(get_db)):
+def add_to_email_blocklist(entry: EmailBlocklistCreate, db: Session = Depends(get_db), _auth: None = Depends(require_api_token)):
     """Add entry to email blocklist."""
     repo = EmailBlocklistRepository(db)
 
@@ -279,14 +280,14 @@ def add_to_email_blocklist(entry: EmailBlocklistCreate, db: Session = Depends(ge
 
 
 @router.get("/blocklist", response_model=List[EmailBlocklistResponse])
-def list_email_blocklist(db: Session = Depends(get_db)):
+def list_email_blocklist(db: Session = Depends(get_db), _auth: None = Depends(require_api_token)):
     """List all email blocklist entries."""
     repo = EmailBlocklistRepository(db)
     return repo.get_all()
 
 
 @router.delete("/blocklist/{entry_id}")
-def remove_from_email_blocklist(entry_id: int, db: Session = Depends(get_db)):
+def remove_from_email_blocklist(entry_id: int, db: Session = Depends(get_db), _auth: None = Depends(require_api_token)):
     """Remove entry from email blocklist."""
     repo = EmailBlocklistRepository(db)
     if not repo.remove(entry_id):
@@ -299,7 +300,7 @@ def remove_from_email_blocklist(entry_id: int, db: Session = Depends(get_db)):
 # ============================================================================
 
 @router.post("/apply")
-async def apply_email_config(db: Session = Depends(get_db)):
+async def apply_email_config(db: Session = Depends(get_db), _auth: None = Depends(require_api_token)):
     """Push email configuration to all deployed agents."""
     manager = EmailManager(db)
     results = await manager.sync_all_agents()
@@ -307,7 +308,7 @@ async def apply_email_config(db: Session = Depends(get_db)):
 
 
 @router.post("/apply/{agent_id}")
-async def apply_email_config_to_agent(agent_id: int, db: Session = Depends(get_db)):
+async def apply_email_config_to_agent(agent_id: int, db: Session = Depends(get_db), _auth: None = Depends(require_api_token)):
     """Push email configuration to a specific agent."""
     manager = EmailManager(db)
     success = await manager.trigger_agent_sync(agent_id)
@@ -322,7 +323,7 @@ async def apply_email_config_to_agent(agent_id: int, db: Session = Depends(get_d
 # ============================================================================
 
 @router.get("/agent/{agent_id}/config", response_model=AgentEmailConfig)
-def get_agent_email_config(agent_id: int, db: Session = Depends(get_db)):
+def get_agent_email_config(agent_id: int, db: Session = Depends(get_db), _auth: None = Depends(require_api_token)):
     """Get email configuration for a specific agent (used by agent config sync)."""
     manager = EmailManager(db)
     config = manager.get_agent_email_config(agent_id)

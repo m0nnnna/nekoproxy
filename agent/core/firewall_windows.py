@@ -11,6 +11,7 @@ from dataclasses import dataclass
 
 from shared.models import FirewallRuleResponse
 from shared.models.common import FirewallAction, Protocol
+from agent.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -211,6 +212,21 @@ class WindowsFirewallManager:
             ok, err = await self._run_powershell(script)
             if not ok:
                 logger.warning("Failed to add baseline rule %s: %s", name, err)
+
+        # Explicitly block the ControlAPI management port on the Public profile so it is
+        # never reachable from the public internet regardless of the profile's default action.
+        mgmt_port = settings.api_port
+        mgmt_name = f"{BASELINE_RULE_PREFIX}ControlAPI {mgmt_port} Block Public"
+        esc_mgmt = mgmt_name.replace("'", "''")
+        script_block = (
+            "New-NetFirewallRule -DisplayName '" + esc_mgmt + "' -Direction Inbound -Action Block -Protocol TCP"
+            " -LocalPort " + str(mgmt_port) + " -Profile Public -ErrorAction Stop"
+        )
+        ok_b, err_b = await self._run_powershell(script_block)
+        if not ok_b:
+            logger.warning("Failed to add ControlAPI block rule: %s", err_b)
+        else:
+            logger.info("Windows Firewall baseline: ControlAPI port %d explicitly blocked on Public profile", mgmt_port)
 
         self._baseline_applied = True
         logger.info("Windows Firewall baseline: Public profile allows %d proxy port(s)", len(safe_ports))

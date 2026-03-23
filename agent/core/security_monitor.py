@@ -157,7 +157,8 @@ class SecurityMonitor:
     async def start(self):
         """Start security monitoring."""
         self._running = True
-        self._client = httpx.AsyncClient(timeout=10.0)
+        ssl_verify = getattr(settings, "controller_ssl_ca_cert", None) or getattr(settings, "controller_ssl_verify", False)
+        self._client = httpx.AsyncClient(timeout=10.0, verify=ssl_verify)
 
         # Initialize file positions to end of files
         for log_file in self.LOG_FILES:
@@ -362,7 +363,8 @@ class SecurityMonitor:
         url = f"{settings.controller_url}/api/v1/alerts"
 
         try:
-            response = await self._client.post(url, json=payload)
+            _headers = {"X-Agent-Token": settings.agent_token} if settings.agent_token else {}
+            response = await self._client.post(url, json=payload, headers=_headers)
             response.raise_for_status()
             logger.info(f"Security alert sent: {alert_type} from {source_ip} ({count} attempts)")
         except Exception as e:
@@ -410,7 +412,8 @@ class SecurityMonitor:
         }
 
         try:
-            response = await self._client.post(url, json=payload)
+            _headers = {"X-Agent-Token": settings.agent_token} if settings.agent_token else {}
+            response = await self._client.post(url, json=payload, headers=_headers)
             response.raise_for_status()
             logger.debug(f"Recorded {len(connections)} {event_type} events in stats")
         except Exception as e:

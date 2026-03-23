@@ -55,6 +55,14 @@
         .htmx-request .htmx-indicator { display: inline; }
         .htmx-request.htmx-indicator { display: inline; }
     </style>
+    <script>
+        // Apply dark mode before paint to avoid flash
+        (function() {
+            if (localStorage.getItem('neko-dark') === '1') {
+                document.documentElement.classList.add('dark');
+            }
+        })();
+    </script>
 </head>
 <body class="bg-neko-50 min-h-screen font-['Nunito']">
     <!-- Navigation -->
@@ -81,7 +89,8 @@
                     <span class="text-xl font-extrabold tracking-wide">NekoProxy</span>
                     <span class="text-xs opacity-75 ml-1">~nya</span>
                 </div>
-                <div class="flex space-x-1">
+                <div class="flex items-center space-x-1">
+                    <button onclick="toggleDark()" class="neko-dark-toggle px-3 py-2 rounded-full text-sm font-semibold hover:bg-white/10 transition-all duration-200" title="Toggle dark mode"></button>
                     <a href="/" class="neko-nav-link px-3 py-2 rounded-full text-sm font-semibold transition-all duration-200 {% if active_page == 'dashboard' %}bg-white/20 shadow-inner{% else %}hover:bg-white/10{% endif %}">
                         Dashboard
                     </a>
@@ -129,12 +138,19 @@
     <footer class="neko-footer text-white/70 py-6 mt-8">
         <div class="max-w-7xl mx-auto px-4 text-center">
             <div class="text-lg mb-1">
-                =^.^= NekoProxy v2.0.0 =^.^=
+                =^.^= NekoProxy v3.0.0 =^.^=
             </div>
             <div class="text-xs opacity-60">
                 Purr-otecting your network, one paw at a time ~nya
             </div>
         </div>
     </footer>
+    <script>
+        function toggleDark() {
+            const root = document.documentElement;
+            root.classList.toggle('dark');
+            localStorage.setItem('neko-dark', root.classList.contains('dark') ? '1' : '0');
+        }
+    </script>
 </body>
 </html>

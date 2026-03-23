@@ -14,6 +14,7 @@ class Agent(Base):
     wireguard_ip = Column(String(45), unique=True, nullable=True)  # None = internal agent (no WireGuard)
     control_url = Column(String(255), nullable=True)  # Optional base URL for sync/push when no WireGuard (e.g. http://127.0.0.1:8002)
     public_ip = Column(String(45), nullable=True)
+    agent_token = Column(String(64), nullable=True, unique=True)  # Per-agent auth token (issued at registration)
     status = Column(SQLEnum(HealthStatus), default=HealthStatus.UNKNOWN)
     last_heartbeat = Column(DateTime, nullable=True)
     active_connections = Column(Integer, default=0)
@@ -261,6 +262,8 @@ class GlobalSettings(Base):
     idle_connection_timeout_seconds = Column(Integer, nullable=True)  # 0 = disabled
     paranoid = Column(Boolean, default=False, nullable=True)
     agent_secret = Column(String(255), nullable=True)  # optional; agents must send this to register
+    api_token = Column(String(64), nullable=True)  # admin API token (auto-generated on first run)
+    controller_token = Column(String(64), nullable=True)  # token controller sends to agents' ControlAPI
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 

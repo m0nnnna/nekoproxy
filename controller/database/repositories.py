@@ -11,13 +11,14 @@ class AgentRepository:
     def __init__(self, db: Session):
         self.db = db
 
-    def create(self, hostname: str, wireguard_ip: Optional[str] = None, public_ip: Optional[str] = None, version: str = "2.0.0", control_url: Optional[str] = None) -> Agent:
+    def create(self, hostname: str, wireguard_ip: Optional[str] = None, public_ip: Optional[str] = None, version: str = "2.0.0", control_url: Optional[str] = None, agent_token: Optional[str] = None) -> Agent:
         agent = Agent(
             hostname=hostname,
             wireguard_ip=wireguard_ip,
             public_ip=public_ip,
             version=version,
             control_url=control_url,
+            agent_token=agent_token,
             status=HealthStatus.HEALTHY,
             last_heartbeat=datetime.utcnow()
         )
@@ -269,6 +270,8 @@ class GlobalSettingsRepository:
         idle_connection_timeout_seconds: Optional[int] = None,
         paranoid: Optional[bool] = None,
         agent_secret: Optional[str] = None,
+        api_token: Optional[str] = None,
+        controller_token: Optional[str] = None,
     ) -> GlobalSettings:
         row = self.get_or_create()
         if controller_url is not None:
@@ -283,6 +286,10 @@ class GlobalSettingsRepository:
             row.paranoid = paranoid
         if agent_secret is not None:
             row.agent_secret = agent_secret if agent_secret else None
+        if api_token is not None:
+            row.api_token = api_token if api_token else None
+        if controller_token is not None:
+            row.controller_token = controller_token if controller_token else None
         self.db.commit()
         self.db.refresh(row)
         return row

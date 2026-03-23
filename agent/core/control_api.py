@@ -1,8 +1,16 @@
-"""Control API for receiving commands from controller."""
+"""Control API for receiving commands from controller.
+
+All endpoints require a valid X-Controller-Token header when
+settings.controller_token is configured.  This prevents unauthorized
+parties from triggering syncs, pushing binaries, or deploying email
+proxies without knowing the shared controller token.
+"""
 
 import asyncio
+import hmac
 import logging
 import os
+import ssl
 import subprocess
 import sys
 from pathlib import Path
@@ -18,6 +26,22 @@ except ImportError:
 from agent.config import settings
 
 logger = logging.getLogger(__name__)
+
+
+def _check_controller_token(request) -> bool:
+    """Return True if the request carries a valid controller token (or no token is required)."""
+    required = settings.controller_token
+    if not required:
+        return True  # No token configured — allow (backward compat / first run)
+    provided = request.headers.get("X-Controller-Token", "")
+    return bool(provided) and hmac.compare_digest(provided, required)
+
+
+def _token_error() -> web.Response:
+    return web.json_response(
+        {"status": "error", "message": "Invalid or missing controller token"},
+        status=401,
+    )
 
 
 class ControlAPI:
@@ -63,16 +87,61 @@ class ControlAPI:
             self._runner = web.AppRunner(self._app)
             await self._runner.setup()
 
-            # Listen on wireguard IP when set (not public); otherwise 0.0.0.0 for internal/same-machine
-            bind_host = settings.wireguard_ip if settings.wireguard_ip else "0.0.0.0"
+            # ── TLS: auto-generate cert if none configured ────────────────
+            ssl_ctx = None
+            certfile = getattr(settings, "control_ssl_certfile", None)
+            keyfile = getattr(settings, "control_ssl_keyfile", None)
+
+            if not certfile:
+                # Auto-generate a self-signed cert for the ControlAPI so that
+                # all controller → agent traffic is encrypted.
+                try:
+                    from shared.tls import ensure_cert
+                    install_dir = settings.install_dir_resolved
+                    cert_path = install_dir / "agent-cert.pem"
+                    key_path  = install_dir / "agent-key.pem"
+                    extra_ips = [
+                        ip for ip in [
+                            getattr(settings, "wireguard_ip", None),
+                            getattr(settings, "public_ip", None),
+                        ] if ip
+                    ]
+                    generated, fp = ensure_cert(cert_path, key_path, extra_ips=extra_ips)
+                    settings.control_ssl_certfile = str(cert_path)
+                    settings.control_ssl_keyfile  = str(key_path)
+                    certfile = str(cert_path)
+                    keyfile  = str(key_path)
+                    if generated:
+                        logger.info("Auto-generated ControlAPI TLS cert (SHA-256: %s)", fp)
+                    else:
+                        logger.info("Using existing ControlAPI TLS cert (SHA-256: %s)", fp)
+                except Exception as e:
+                    logger.warning("Could not auto-generate ControlAPI TLS cert: %s", e)
+
+            if certfile and keyfile:
+                ssl_ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+                ssl_ctx.load_cert_chain(certfile, keyfile)
+                logger.info(f"Control API TLS enabled (cert: {certfile})")
+
+            # Bind ControlAPI to the management network only — never the public internet interface.
+            # Priority: explicit control_bind_ip > wireguard_ip > loopback (127.0.0.1).
+            # Using 0.0.0.0 would expose port 8002 on all interfaces including the public IP.
+            if getattr(settings, "control_bind_ip", None):
+                bind_host = settings.control_bind_ip
+            elif settings.wireguard_ip:
+                bind_host = settings.wireguard_ip
+            else:
+                bind_host = "127.0.0.1"
             self._site = web.TCPSite(
                 self._runner,
                 bind_host,
-                settings.api_port
+                settings.api_port,
+                ssl_context=ssl_ctx,
             )
             await self._site.start()
 
-            logger.info(f"Control API listening on {bind_host}:{settings.api_port}")
+            scheme = "https" if ssl_ctx else "http"
+            logger.info(f"Control API listening on {scheme}://{bind_host}:{settings.api_port}")
         except Exception as e:
             logger.error(f"Failed to start Control API: {e}")
             logger.warning("Push sync from controller will not work")
@@ -85,6 +154,8 @@ class ControlAPI:
 
     async def _handle_trigger_sync(self, request: web.Request) -> web.Response:
         """Handle sync trigger from controller."""
+        if not _check_controller_token(request):
+            return _token_error()
         logger.info("Received sync trigger from controller")
         try:
             await self.trigger_sync()
@@ -102,6 +173,8 @@ class ControlAPI:
 
     async def _handle_update_binary(self, request: web.Request) -> web.Response:
         """Receive new agent binary from controller, write to staging path, then spawn update script (agent will restart)."""
+        if not _check_controller_token(request):
+            return _token_error()
         install_dir = settings.install_dir_resolved
         is_windows = sys.platform == "win32"
         staging_name = "nekoproxy-agent.new.exe" if is_windows else "nekoproxy-agent.new"
@@ -164,6 +237,8 @@ class ControlAPI:
 
     async def _handle_deploy_email(self, request: web.Request) -> web.Response:
         """Handle email proxy deployment request from controller."""
+        if not _check_controller_token(request):
+            return _token_error()
         if not self.deploy_email:
             return web.json_response(
                 {"status": "error", "message": "Email deployment not supported"},
@@ -211,6 +286,8 @@ class ControlAPI:
 
     async def _handle_trigger_email_sync(self, request: web.Request) -> web.Response:
         """Handle email config sync trigger from controller."""
+        if not _check_controller_token(request):
+            return _token_error()
         if not self.trigger_email_sync:
             return web.json_response(
                 {"status": "error", "message": "Email sync not supported"},

@@ -1,6 +1,10 @@
 import asyncio
+import hmac
+from pathlib import Path
+from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Header
+from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -9,9 +13,27 @@ from controller.database.database import get_db
 from controller.database.repositories import AgentRepository, GlobalSettingsRepository
 from controller.core.agent_manager import AgentManager
 from controller.core.agent_sync import get_agent_host
+from controller.core.auth import require_api_token, require_agent_token, generate_token
 from shared.models import AgentRegistration, AgentHeartbeat, AgentConfig, AgentStatus
 
 router = APIRouter()
+
+
+@router.get("/controller-cert", response_class=PlainTextResponse, include_in_schema=False)
+def get_controller_cert():
+    """Return the controller's public TLS certificate in PEM format.
+
+    Intentionally unauthenticated — agents call this on first registration
+    to download and cache the cert (Trust On First Use / TOFU).
+    Only the public certificate is returned, never the private key.
+    """
+    cert_file = controller_settings.ssl_certfile
+    if not cert_file:
+        raise HTTPException(status_code=404, detail="TLS not configured on this controller")
+    cert_path = Path(cert_file)
+    if not cert_path.is_file():
+        raise HTTPException(status_code=404, detail="Certificate file not found")
+    return cert_path.read_text(encoding="utf-8")
 
 
 class TestPortResponse(BaseModel):
@@ -19,33 +41,62 @@ class TestPortResponse(BaseModel):
     message: str
 
 
-@router.post("/register", response_model=AgentStatus)
+def _agent_auth(
+    agent_id: int,
+    x_agent_token: Optional[str] = Header(default=None, alias="X-Agent-Token"),
+    x_api_token: Optional[str] = Header(default=None, alias="X-API-Token"),
+    authorization: Optional[str] = Header(default=None),
+    db: Session = Depends(get_db),
+):
+    """FastAPI dependency: validates per-agent token or admin token for agent-scoped endpoints."""
+    require_agent_token(agent_id, x_agent_token, x_api_token, authorization, db)
+
+
+@router.post("/register")
 def register_agent(registration: AgentRegistration, db: Session = Depends(get_db)):
-    """Register a new agent or update existing registration."""
+    """Register a new agent or update existing registration.
+
+    Returns AgentStatus fields plus an 'agent_token' the agent must use for all
+    subsequent requests to the controller API.
+    """
     gs = GlobalSettingsRepository(db).get()
     agent_secret = (gs.agent_secret if gs and gs.agent_secret else None) or controller_settings.agent_secret
     if agent_secret:
-        if not registration.agent_secret or registration.agent_secret != agent_secret:
+        provided = registration.agent_secret or ""
+        if not hmac.compare_digest(provided.encode(), agent_secret.encode()):
             raise HTTPException(status_code=401, detail="Invalid or missing agent secret")
     manager = AgentManager(db)
     agent = manager.register_agent(registration)
-    return AgentStatus(
-        id=agent.id,
-        hostname=agent.hostname,
-        wireguard_ip=agent.wireguard_ip,
-        public_ip=agent.public_ip,
-        status=agent.status,
-        last_heartbeat=agent.last_heartbeat,
-        active_connections=agent.active_connections,
-        cpu_percent=agent.cpu_percent,
-        memory_percent=agent.memory_percent,
-        version=agent.version,
-        created_at=agent.created_at
-    )
+
+    # Issue / refresh per-agent token on every registration
+    if not agent.agent_token:
+        agent.agent_token = generate_token()
+        db.commit()
+        db.refresh(agent)
+
+    return {
+        "id": agent.id,
+        "hostname": agent.hostname,
+        "wireguard_ip": agent.wireguard_ip,
+        "public_ip": agent.public_ip,
+        "status": agent.status,
+        "last_heartbeat": agent.last_heartbeat,
+        "active_connections": agent.active_connections,
+        "cpu_percent": agent.cpu_percent,
+        "memory_percent": agent.memory_percent,
+        "version": agent.version,
+        "created_at": agent.created_at,
+        "agent_token": agent.agent_token,
+    }
 
 
 @router.post("/{agent_id}/heartbeat", response_model=AgentStatus)
-def heartbeat(agent_id: int, heartbeat_data: AgentHeartbeat, db: Session = Depends(get_db)):
+def heartbeat(
+    agent_id: int,
+    heartbeat_data: AgentHeartbeat,
+    db: Session = Depends(get_db),
+    _auth: None = Depends(_agent_auth),
+):
     """Process agent heartbeat."""
     manager = AgentManager(db)
     agent = manager.process_heartbeat(agent_id, heartbeat_data)
@@ -67,7 +118,11 @@ def heartbeat(agent_id: int, heartbeat_data: AgentHeartbeat, db: Session = Depen
 
 
 @router.get("/{agent_id}/config", response_model=AgentConfig)
-def get_agent_config(agent_id: int, db: Session = Depends(get_db)):
+def get_agent_config(
+    agent_id: int,
+    db: Session = Depends(get_db),
+    _auth: None = Depends(_agent_auth),
+):
     """Get configuration for an agent."""
     manager = AgentManager(db)
     config = manager.get_agent_config(agent_id)
@@ -77,7 +132,10 @@ def get_agent_config(agent_id: int, db: Session = Depends(get_db)):
 
 
 @router.get("", response_model=list[AgentStatus])
-def list_agents(db: Session = Depends(get_db)):
+def list_agents(
+    db: Session = Depends(get_db),
+    _auth: None = Depends(require_api_token),
+):
     """List all agents."""
     repo = AgentRepository(db)
     agents = repo.get_all()
@@ -100,7 +158,11 @@ def list_agents(db: Session = Depends(get_db)):
 
 
 @router.get("/{agent_id}", response_model=AgentStatus)
-def get_agent(agent_id: int, db: Session = Depends(get_db)):
+def get_agent(
+    agent_id: int,
+    db: Session = Depends(get_db),
+    _auth: None = Depends(require_api_token),
+):
     """Get specific agent details."""
     repo = AgentRepository(db)
     agent = repo.get_by_id(agent_id)
@@ -122,7 +184,11 @@ def get_agent(agent_id: int, db: Session = Depends(get_db)):
 
 
 @router.delete("/{agent_id}")
-def delete_agent(agent_id: int, db: Session = Depends(get_db)):
+def delete_agent(
+    agent_id: int,
+    db: Session = Depends(get_db),
+    _auth: None = Depends(require_api_token),
+):
     """Remove an agent."""
     repo = AgentRepository(db)
     if not repo.delete(agent_id):
@@ -131,7 +197,12 @@ def delete_agent(agent_id: int, db: Session = Depends(get_db)):
 
 
 @router.get("/{agent_id}/test-port", response_model=TestPortResponse)
-async def test_agent_port(agent_id: int, port: int, db: Session = Depends(get_db)):
+async def test_agent_port(
+    agent_id: int,
+    port: int,
+    db: Session = Depends(get_db),
+    _auth: None = Depends(require_api_token),
+):
     """Test TCP connectivity to a port on the agent (e.g. to verify firewall blocking).
     Connects from the controller to agent host:port. Use to confirm a port is blocked or reachable.
     """

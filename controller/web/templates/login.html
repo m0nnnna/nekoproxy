@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NekoProxy — Login</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        neko: {
+                            50: '#fdf2f8', 100: '#fce7f3', 200: '#fbcfe8',
+                            300: '#f9a8d4', 400: '#f472b6', 500: '#ec4899',
+                            600: '#db2777', 700: '#be185d', 800: '#9d174d', 900: '#831843',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+</head>
+<body class="min-h-screen bg-gray-950 flex items-center justify-center">
+    <div class="w-full max-w-sm">
+        <div class="bg-gray-900 border border-gray-800 rounded-2xl shadow-2xl p-8">
+            <!-- Logo / brand -->
+            <div class="flex flex-col items-center mb-8">
+                <div class="w-16 h-16 bg-neko-600 rounded-full flex items-center justify-center mb-3">
+                    <svg class="w-9 h-9 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                              d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>
+                    </svg>
+                </div>
+                <h1 class="text-2xl font-bold text-white">NekoProxy</h1>
+                <p class="text-gray-400 text-sm mt-1">Controller Dashboard</p>
+            </div>
+
+            {% if error %}
+            <div class="mb-4 px-4 py-3 bg-red-900/40 border border-red-700 rounded-lg text-red-300 text-sm">
+                {{ error }}
+            </div>
+            {% endif %}
+
+            <form method="POST" action="/login">
+                <div class="mb-4">
+                    <label for="password" class="block text-sm font-medium text-gray-300 mb-2">
+                        API Token / Password
+                    </label>
+                    <input
+                        type="password"
+                        id="password"
+                        name="password"
+                        required
+                        autofocus
+                        class="w-full px-4 py-3 bg-gray-800 border border-gray-700 rounded-lg text-white placeholder-gray-500
+                               focus:outline-none focus:border-neko-500 focus:ring-1 focus:ring-neko-500 transition"
+                        placeholder="Enter your API token"
+                    />
+                </div>
+                <button
+                    type="submit"
+                    class="w-full py-3 bg-neko-600 hover:bg-neko-500 text-white font-semibold rounded-lg
+                           transition-colors focus:outline-none focus:ring-2 focus:ring-neko-400"
+                >
+                    Sign In
+                </button>
+            </form>
+
+            <p class="mt-6 text-center text-xs text-gray-600">
+                The API token is printed in the controller log on first start,<br>
+                or set via the <code class="text-gray-500">NEKO_API_TOKEN</code> environment variable.
+            </p>
+        </div>
+    </div>
+</body>
+</html>
