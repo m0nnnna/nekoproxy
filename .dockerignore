@@ -1,0 +1,31 @@
+# Exclude the local venv / PyInstaller environment
+Lib/
+Include/
+Scripts/
+pyvenv.cfg
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Exclude PyInstaller work directories (but keep build/ scripts, specs, and Dockerfiles)
+build/agent/
+build/controller/
+dist/
+*.exe
+
+# Exclude data and secrets
+*.db
+*.db-shm
+*.db-wal
+uploads/
+agent_token.txt
+.env
+docker/controller.env
+docker/agent.env
+
+# Exclude editor / OS files
+.git/
+*.log
+.DS_Store
+Thumbs.db
