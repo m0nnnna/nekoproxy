@@ -1,0 +1,52 @@
+# Python virtual environment
+Lib/
+Include/
+Scripts/
+pyvenv.cfg
+
+# Python bytecode
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.pyz
+
+# PyInstaller build artifacts
+build/agent/
+build/controller/
+
+# Distribution binaries and archives
+dist/
+
+# Archive files
+*.zip
+
+# Environment / secrets
+.env
+.env.*
+!*.env.example
+!deployment/example.env
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+
+# Logs
+*.log
+
+# Windows venv executables
+scripts/*.exe
+
+# IDE / editor
+.vscode/
+.idea/
+*.swp
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Claude AI config
+.claude/
