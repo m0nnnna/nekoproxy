@@ -4,40 +4,259 @@
 
 {% block content %}
 <div class="flex justify-between items-center mb-6">
-    <h1 class="text-2xl neko-header">Live connections</h1>
-    <p class="text-sm text-neko-500">Last 60 seconds · refreshes every 2s</p>
-</div>
-
-<div class="neko-card p-4 mb-4">
-    <p class="text-sm text-neko-600">Connections and the services they use, as reported by agents. Use this to review traffic in real time.</p>
-</div>
-
-<div class="neko-table-container">
-    <div class="neko-scroll">
-        <table class="min-w-full neko-table">
-            <thead class="sticky top-0 z-10 bg-neko-50">
-                <tr>
-                    <th class="text-left">Time</th>
-                    <th class="text-left">Agent</th>
-                    <th class="text-left">Service</th>
-                    <th class="text-left">Client IP</th>
-                    <th class="text-left">Status</th>
-                    <th class="text-left">Duration</th>
-                    <th class="text-left">Sent</th>
-                    <th class="text-left">Received</th>
-                </tr>
-            </thead>
-            <tbody id="live-connections-body"
-                   hx-get="/partials/live-connections?seconds=60"
-                   hx-trigger="every 2s"
-                   hx-swap="innerHTML">
-                {% include "partials/live_connections.html" %}
-            </tbody>
-        </table>
+    <h1 class="text-2xl neko-header">Live Traffic</h1>
+    <div class="flex items-center gap-2">
+        <span id="sse-dot" class="inline-block w-2.5 h-2.5 rounded-full bg-gray-400 transition-colors duration-300"></span>
+        <span id="sse-label" class="text-sm text-neko-500">Connecting…</span>
     </div>
 </div>
 
-<div class="mt-2 text-sm text-neko-400">
-    Live view shows connection stats from the last 60 seconds. Empty table means no recent activity.
+<div class="space-y-4">
+
+    <!-- Incoming panel -->
+    <div class="neko-card overflow-hidden">
+        <button class="w-full flex items-center justify-between px-4 py-3 text-left focus:outline-none"
+                onclick="togglePanel('incoming')">
+            <div class="flex items-center gap-2">
+                <span class="font-semibold text-neko-700 dark:text-neko-300">Incoming</span>
+                <span class="text-xs text-neko-500">TCP / UDP service connections</span>
+                <span id="badge-incoming" class="px-2 py-0.5 text-xs font-semibold bg-neko-100 text-neko-600 rounded-full">0</span>
+            </div>
+            <span id="arrow-incoming" class="text-neko-400 text-xs">▼</span>
+        </button>
+        <div id="panel-incoming" class="overflow-auto" style="max-height:280px">
+            <table class="min-w-full neko-table">
+                <thead class="sticky top-0 z-10 bg-neko-50 dark:bg-gray-800">
+                    <tr>
+                        <th class="text-left">Time</th>
+                        <th class="text-left">Agent</th>
+                        <th class="text-left">Service</th>
+                        <th class="text-left">Client IP</th>
+                        <th class="text-left">Status</th>
+                        <th class="text-left">Duration</th>
+                        <th class="text-left">Sent</th>
+                        <th class="text-left">Recv</th>
+                    </tr>
+                </thead>
+                <tbody id="tbody-incoming">
+                    <tr data-placeholder><td colspan="8" class="text-center py-5 text-neko-400">Waiting for connections…</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- DNS panel -->
+    <div class="neko-card overflow-hidden">
+        <button class="w-full flex items-center justify-between px-4 py-3 text-left focus:outline-none"
+                onclick="togglePanel('dns')">
+            <div class="flex items-center gap-2">
+                <span class="font-semibold text-paw-600 dark:text-paw-300">DNS</span>
+                <span class="text-xs text-neko-500">DNS resolver queries</span>
+                <span id="badge-dns" class="px-2 py-0.5 text-xs font-semibold bg-paw-100 text-paw-600 rounded-full">0</span>
+            </div>
+            <span id="arrow-dns" class="text-neko-400 text-xs">▼</span>
+        </button>
+        <div id="panel-dns" class="overflow-auto" style="max-height:280px">
+            <table class="min-w-full neko-table">
+                <thead class="sticky top-0 z-10 bg-neko-50 dark:bg-gray-800">
+                    <tr>
+                        <th class="text-left">Time</th>
+                        <th class="text-left">Agent</th>
+                        <th class="text-left">Client IP</th>
+                        <th class="text-left">Status</th>
+                        <th class="text-left">Duration</th>
+                        <th class="text-left">Query</th>
+                        <th class="text-left">Response</th>
+                    </tr>
+                </thead>
+                <tbody id="tbody-dns">
+                    <tr data-placeholder><td colspan="7" class="text-center py-5 text-neko-400">Waiting for DNS queries…</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Forward Outbound panel -->
+    <div class="neko-card overflow-hidden">
+        <button class="w-full flex items-center justify-between px-4 py-3 text-left focus:outline-none"
+                onclick="togglePanel('forward')">
+            <div class="flex items-center gap-2">
+                <span class="font-semibold text-whisker-500 dark:text-whisker-300">Forward Outbound</span>
+                <span class="text-xs text-neko-500">HTTP/HTTPS proxy tunnels</span>
+                <span id="badge-forward" class="px-2 py-0.5 text-xs font-semibold bg-whisker-100 text-whisker-500 rounded-full">0</span>
+            </div>
+            <span id="arrow-forward" class="text-neko-400 text-xs">▼</span>
+        </button>
+        <div id="panel-forward" class="overflow-auto" style="max-height:280px">
+            <table class="min-w-full neko-table">
+                <thead class="sticky top-0 z-10 bg-neko-50 dark:bg-gray-800">
+                    <tr>
+                        <th class="text-left">Time</th>
+                        <th class="text-left">Agent</th>
+                        <th class="text-left">Destination</th>
+                        <th class="text-left">Client IP</th>
+                        <th class="text-left">Status</th>
+                        <th class="text-left">Duration</th>
+                        <th class="text-left">Sent</th>
+                        <th class="text-left">Recv</th>
+                    </tr>
+                </thead>
+                <tbody id="tbody-forward">
+                    <tr data-placeholder><td colspan="8" class="text-center py-5 text-neko-400">Waiting for proxy tunnels…</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Email panel -->
+    <div class="neko-card overflow-hidden">
+        <button class="w-full flex items-center justify-between px-4 py-3 text-left focus:outline-none"
+                onclick="togglePanel('email')">
+            <div class="flex items-center gap-2">
+                <span class="font-semibold text-green-600 dark:text-green-400">Email</span>
+                <span class="text-xs text-neko-500">Postfix mail log</span>
+                <span id="badge-email" class="px-2 py-0.5 text-xs font-semibold bg-green-100 text-green-600 rounded-full">0</span>
+            </div>
+            <span id="arrow-email" class="text-neko-400 text-xs">▼</span>
+        </button>
+        <div id="panel-email" class="overflow-auto" style="max-height:280px">
+            <table class="min-w-full neko-table">
+                <thead class="sticky top-0 z-10 bg-neko-50 dark:bg-gray-800">
+                    <tr>
+                        <th class="text-left">Time</th>
+                        <th class="text-left">Agent</th>
+                        <th class="text-left">From</th>
+                        <th class="text-left">To</th>
+                        <th class="text-left">Status</th>
+                        <th class="text-left">Size</th>
+                    </tr>
+                </thead>
+                <tbody id="tbody-email">
+                    <tr data-placeholder><td colspan="6" class="text-center py-5 text-neko-400">Waiting for mail events…</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
 </div>
+
+<script>
+(function () {
+    const MAX_ROWS = 100;
+    const counts = { incoming: 0, dns: 0, forward: 0, email: 0 };
+
+    function togglePanel(ch) {
+        const panel = document.getElementById('panel-' + ch);
+        const arrow = document.getElementById('arrow-' + ch);
+        const hidden = panel.style.display === 'none';
+        panel.style.display = hidden ? '' : 'none';
+        arrow.textContent = hidden ? '▼' : '▶';
+    }
+
+    function statusClass(s) {
+        const m = {
+            completed: 'text-green-500', resolved: 'text-green-500',
+            delivered: 'text-green-500', connected: 'text-green-500',
+            blocked: 'text-red-500', failed: 'text-red-500',
+            error: 'text-red-500', bounced: 'text-red-500',
+            refused: 'text-red-500',
+            timeout: 'text-yellow-500', deferred: 'text-yellow-500',
+        };
+        return m[s] || 'text-neko-500';
+    }
+
+    function fmtBytes(b) {
+        if (!b) return '0';
+        if (b < 1024) return b + 'B';
+        if (b < 1048576) return (b / 1024).toFixed(1) + 'K';
+        return (b / 1048576).toFixed(1) + 'M';
+    }
+
+    function fmtDur(d) {
+        return (d != null) ? d.toFixed(1) + 's' : '-';
+    }
+
+    function esc(s) {
+        return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    }
+
+    function buildRow(ch, e) {
+        const td = (val, cls) =>
+            `<td class="whitespace-nowrap text-sm ${cls || 'text-neko-500'}">${esc(val)}</td>`;
+        const statusTd = (s) =>
+            `<td class="whitespace-nowrap text-sm font-medium ${statusClass(s)}">${esc(s)}</td>`;
+
+        if (ch === 'incoming') {
+            const svc = e.service || (e.status === 'blocked' ? '(blocked)' : '-');
+            return td(e.time,'text-neko-400') + td(e.agent) + td(svc,'text-neko-700 font-medium') +
+                   td(e.client_ip,'text-neko-900 font-medium') + statusTd(e.status) +
+                   td(fmtDur(e.duration)) + td(fmtBytes(e.bytes_sent)) + td(fmtBytes(e.bytes_received));
+        }
+        if (ch === 'dns') {
+            return td(e.time,'text-neko-400') + td(e.agent) +
+                   td(e.client_ip,'text-neko-900 font-medium') + statusTd(e.status) +
+                   td(fmtDur(e.duration)) + td(fmtBytes(e.bytes_sent)) + td(fmtBytes(e.bytes_received));
+        }
+        if (ch === 'forward') {
+            return td(e.time,'text-neko-400') + td(e.agent) + td(e.target||'-','text-neko-700 font-medium') +
+                   td(e.client_ip,'text-neko-900 font-medium') + statusTd(e.status) +
+                   td(fmtDur(e.duration)) + td(fmtBytes(e.bytes_sent)) + td(fmtBytes(e.bytes_received));
+        }
+        if (ch === 'email') {
+            return td(e.time,'text-neko-400') + td(e.agent) +
+                   td(e.sender||'-','text-neko-700') + td(e.recipient||'-','text-neko-700') +
+                   statusTd(e.status) + td(fmtBytes(e.bytes));
+        }
+        return '';
+    }
+
+    function appendEvent(evt) {
+        const ch = evt.channel;
+        const tbody = document.getElementById('tbody-' + ch);
+        if (!tbody) return;
+
+        // Remove placeholder
+        const ph = tbody.querySelector('[data-placeholder]');
+        if (ph) ph.remove();
+
+        const tr = document.createElement('tr');
+        tr.innerHTML = buildRow(ch, evt);
+        tbody.insertBefore(tr, tbody.firstChild);
+
+        // Trim old rows
+        while (tbody.children.length > MAX_ROWS) tbody.removeChild(tbody.lastChild);
+
+        // Update badge
+        counts[ch]++;
+        const badge = document.getElementById('badge-' + ch);
+        if (badge) badge.textContent = counts[ch];
+    }
+
+    // SSE connection with auto-reconnect
+    let es;
+    function connect() {
+        es = new EventSource('/live/stream');
+
+        es.onopen = () => {
+            document.getElementById('sse-dot').className =
+                'inline-block w-2.5 h-2.5 rounded-full bg-green-500 transition-colors duration-300';
+            document.getElementById('sse-label').textContent = 'Live';
+        };
+
+        es.onmessage = (ev) => {
+            try { appendEvent(JSON.parse(ev.data)); } catch (_) {}
+        };
+
+        es.onerror = () => {
+            document.getElementById('sse-dot').className =
+                'inline-block w-2.5 h-2.5 rounded-full bg-red-500 transition-colors duration-300';
+            document.getElementById('sse-label').textContent = 'Reconnecting…';
+            es.close();
+            setTimeout(connect, 4000);
+        };
+    }
+
+    connect();
+})();
+</script>
 {% endblock %}

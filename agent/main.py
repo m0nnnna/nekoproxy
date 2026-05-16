@@ -19,6 +19,8 @@ from agent.core.firewall import FirewallManager
 from agent.core.firewall_windows import WindowsFirewallManager
 from agent.core.control_api import ControlAPI
 from agent.core.email_proxy import EmailProxyManager
+from agent.core.forward_proxy import ForwardProxyServer
+from agent.core.dns_forwarder import DnsForwarder
 from agent.core.email_stats import EmailStatsCollector
 from agent.core.security_monitor import SecurityMonitor
 from agent.core.iptables_monitor import IptablesMonitor
@@ -101,6 +103,14 @@ class NekoProxyAgent:
         self._heartbeat: Optional[HeartbeatSender] = None
         self._config_sync: Optional[ConfigSync] = None
         self._control_api: Optional[ControlAPI] = None
+
+        # Forward proxy server (optional; disabled when forward_proxy_port == 0)
+        self._forward_proxy: Optional[ForwardProxyServer] = None
+        self._forward_proxy_task: Optional[asyncio.Task] = None
+
+        # DNS forwarder (optional; disabled when dns_port == 0)
+        self._dns_forwarder: Optional[DnsForwarder] = None
+        self._dns_forwarder_task: Optional[asyncio.Task] = None
 
     def _on_connection(self, stats):
         """Called when a connection completes."""
@@ -211,6 +221,27 @@ class NekoProxyAgent:
         if config.email_config and self._email_manager.is_deployed:
             await self._email_manager.apply_config(config.email_config)
 
+        # Upstream proxy: apply routing-via-agent setting from controller
+        new_upstream = getattr(config, "upstream_proxy", None)
+        if new_upstream != settings.upstream_proxy:
+            settings.upstream_proxy = new_upstream
+            if new_upstream:
+                logger.info("Upstream proxy set to %s (route-via from controller)", new_upstream)
+            else:
+                logger.info("Upstream proxy cleared (direct connections)")
+
+        # Forward proxy: start/stop/restart based on controller config
+        await self._apply_forward_proxy_config(
+            getattr(config, "forward_proxy_port", 0) or 0,
+            getattr(config, "forward_proxy_auth", None),
+        )
+
+        # DNS forwarder: start/stop/restart based on controller config
+        await self._apply_dns_config(
+            getattr(config, "dns_port", 0) or 0,
+            getattr(config, "dns_upstream", "1.1.1.1:53") or "1.1.1.1:53",
+        )
+
         logger.info(
             f"Config applied: {len([s for s in services if s['protocol'] == 'tcp'])} TCP services, "
             f"{len([s for s in services if s['protocol'] == 'udp'])} UDP services, "
@@ -241,6 +272,96 @@ class NekoProxyAgent:
             await self._email_stats.start()
 
         return result
+
+    async def _apply_forward_proxy_config(self, port: int, auth: Optional[str]):
+        """Start, stop, or restart the forward proxy based on the controller config."""
+        current_port = self._forward_proxy._port if self._forward_proxy else 0
+        current_auth = self._forward_proxy._auth if self._forward_proxy else None
+
+        # Normalize auth for comparison
+        new_auth_tuple = None
+        if auth and ":" in auth:
+            u, p = auth.split(":", 1)
+            new_auth_tuple = (u.strip(), p.strip())
+
+        if port == current_port and new_auth_tuple == current_auth:
+            return  # No change
+
+        # Stop existing forward proxy if running
+        if self._forward_proxy:
+            await self._forward_proxy.stop()
+            if self._forward_proxy_task:
+                self._forward_proxy_task.cancel()
+                try:
+                    await self._forward_proxy_task
+                except asyncio.CancelledError:
+                    pass
+            self._forward_proxy = None
+            self._forward_proxy_task = None
+
+        if port > 0:
+            # Bind to WireGuard IP when available so the forward proxy is never
+            # reachable on the public internet interface at the socket level.
+            # Internal agents (no WireGuard) fall back to listen_ip.
+            listen_ip = settings.wireguard_ip or settings.listen_ip
+            self._forward_proxy = ForwardProxyServer(
+                listen_ip=listen_ip,
+                port=port,
+                upstream_proxy=getattr(settings, "upstream_proxy", None),
+                auth=auth,
+                on_connection=self._on_connection,
+            )
+            self._forward_proxy_task = asyncio.create_task(self._forward_proxy.start())
+            logger.info("Forward proxy started on %s:%d (from controller config)", listen_ip, port)
+
+    async def _apply_dns_config(self, port: int, upstream: str):
+        """Start, stop, or restart the DNS forwarder based on the controller config."""
+        current_port = self._dns_forwarder._port if self._dns_forwarder else 0
+        current_upstream = self._dns_forwarder._upstream if self._dns_forwarder else None
+
+        if port == current_port and upstream == current_upstream:
+            return
+
+        if self._dns_forwarder:
+            await self._dns_forwarder.stop()
+            if self._dns_forwarder_task:
+                self._dns_forwarder_task.cancel()
+                try:
+                    await self._dns_forwarder_task
+                except asyncio.CancelledError:
+                    pass
+            self._dns_forwarder = None
+            self._dns_forwarder_task = None
+
+        if port > 0:
+            # Bind to WireGuard IP when available so the DNS forwarder is never
+            # reachable on the public internet interface at the socket level.
+            # Internal agents (no WireGuard) fall back to listen_ip.
+            listen_ip = settings.wireguard_ip or settings.listen_ip
+            self._dns_forwarder = DnsForwarder(
+                listen_ip=listen_ip,
+                port=port,
+                upstream=upstream,
+                on_connection=self._on_connection,
+            )
+            self._dns_forwarder_task = asyncio.create_task(self._dns_forwarder.start())
+            logger.info("DNS forwarder started on %s:%d → %s (from controller config)", listen_ip, port, upstream)
+
+    async def _on_auth_failed(self):
+        """Re-register with controller to refresh agent token after a 401 rejection."""
+        logger.warning("Token rejected by controller — re-registering to refresh token")
+        success = await self.register()
+        if success:
+            logger.info("Re-registration successful — new token obtained")
+        else:
+            logger.error("Re-registration failed; will retry on next heartbeat/sync")
+
+    async def _on_regen_cert(self):
+        """Rebuild httpx clients in heartbeat and config_sync after cert re-TOFU."""
+        if self._heartbeat:
+            await self._heartbeat._rebuild_client()
+        if self._config_sync:
+            await self._config_sync._rebuild_client()
 
     async def _trigger_email_sync(self):
         """Trigger email configuration sync from controller.
@@ -334,12 +455,18 @@ class NekoProxyAgent:
 
         url = f"{settings.controller_url}/api/v1/agents/register"
 
+        # Send existing token so the controller can recognise this as a known agent
+        # re-registering and bypass the agent_secret check when the secret changed.
+        reg_headers = {}
+        if settings.agent_token:
+            reg_headers["X-Agent-Token"] = settings.agent_token
+
         try:
             # On first run the controller cert may not be cached yet — use verify=False
             # for registration itself, then immediately download and cache the cert.
             ssl_verify = settings.controller_ssl_ca_cert or settings.controller_ssl_verify or False
             async with httpx.AsyncClient(timeout=10.0, verify=ssl_verify) as client:
-                response = await client.post(url, json=reg_data)
+                response = await client.post(url, json=reg_data, headers=reg_headers)
                 response.raise_for_status()
                 data = response.json()
                 self.agent_id = data["id"]
@@ -450,14 +577,16 @@ class NekoProxyAgent:
         # Start heartbeat
         self._heartbeat = HeartbeatSender(
             agent_id=self.agent_id,
-            get_active_connections=self._get_active_connections
+            get_active_connections=self._get_active_connections,
+            on_auth_failed=self._on_auth_failed,
         )
         await self._heartbeat.start()
 
         # Start config sync (will apply initial config)
         self._config_sync = ConfigSync(
             agent_id=self.agent_id,
-            on_config_update=lambda c: asyncio.create_task(self._on_config_update(c))
+            on_config_update=lambda c: asyncio.create_task(self._on_config_update(c)),
+            on_auth_failed=self._on_auth_failed,
         )
         await self._config_sync.start()
 
@@ -465,7 +594,8 @@ class NekoProxyAgent:
         self._control_api = ControlAPI(
             trigger_sync=self._config_sync.force_sync,
             deploy_email=self._deploy_email,
-            trigger_email_sync=self._trigger_email_sync
+            trigger_email_sync=self._trigger_email_sync,
+            on_regen_cert=self._on_regen_cert,
         )
         await self._control_api.start()
 
@@ -487,6 +617,18 @@ class NekoProxyAgent:
         if sys.platform != "win32":
             self._iptables_monitor = IptablesMonitor(self.agent_id)
             await self._iptables_monitor.start()
+
+        # Start forward proxy if configured via env (controller config handled by _apply_forward_proxy_config)
+        if getattr(settings, "forward_proxy_port", 0):
+            _fwd_listen_ip = settings.wireguard_ip or settings.listen_ip
+            self._forward_proxy = ForwardProxyServer(
+                listen_ip=_fwd_listen_ip,
+                port=settings.forward_proxy_port,
+                upstream_proxy=getattr(settings, "upstream_proxy", None),
+                auth=getattr(settings, "forward_proxy_auth", None),
+                on_connection=self._on_connection,
+            )
+            self._forward_proxy_task = asyncio.create_task(self._forward_proxy.start())
 
         logger.info("=" * 70)
         logger.info("NekoProxy Agent running. Press Ctrl+C to stop.")
@@ -510,6 +652,24 @@ class NekoProxyAgent:
 
         if self._heartbeat:
             await self._heartbeat.stop()
+
+        if self._forward_proxy:
+            await self._forward_proxy.stop()
+        if self._forward_proxy_task:
+            self._forward_proxy_task.cancel()
+            try:
+                await self._forward_proxy_task
+            except asyncio.CancelledError:
+                pass
+
+        if self._dns_forwarder:
+            await self._dns_forwarder.stop()
+        if self._dns_forwarder_task:
+            self._dns_forwarder_task.cancel()
+            try:
+                await self._dns_forwarder_task
+            except asyncio.CancelledError:
+                pass
 
         await self._tcp_manager.stop_all()
         await self._udp_manager.stop_all()

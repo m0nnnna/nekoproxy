@@ -67,6 +67,14 @@ class AgentRepository:
             self.db.commit()
         return agent
 
+    def update_route_via(self, agent_id: int, route_via_agent_id: Optional[int]) -> Optional[Agent]:
+        agent = self.get_by_id(agent_id)
+        if agent:
+            agent.route_via_agent_id = route_via_agent_id
+            self.db.commit()
+            self.db.refresh(agent)
+        return agent
+
     def update_internal(self, agent_id: int, internal: bool) -> Optional[Agent]:
         agent = self.get_by_id(agent_id)
         if agent:
@@ -272,6 +280,10 @@ class GlobalSettingsRepository:
         agent_secret: Optional[str] = None,
         api_token: Optional[str] = None,
         controller_token: Optional[str] = None,
+        forward_proxy_port: Optional[int] = None,
+        forward_proxy_auth: Optional[str] = None,
+        dns_port: Optional[int] = None,
+        dns_upstream: Optional[str] = None,
     ) -> GlobalSettings:
         row = self.get_or_create()
         if controller_url is not None:
@@ -290,6 +302,14 @@ class GlobalSettingsRepository:
             row.api_token = api_token if api_token else None
         if controller_token is not None:
             row.controller_token = controller_token if controller_token else None
+        if forward_proxy_port is not None:
+            row.forward_proxy_port = forward_proxy_port if forward_proxy_port > 0 else None
+        if forward_proxy_auth is not None:
+            row.forward_proxy_auth = forward_proxy_auth if forward_proxy_auth else None
+        if dns_port is not None:
+            row.dns_port = dns_port if dns_port > 0 else None
+        if dns_upstream is not None:
+            row.dns_upstream = dns_upstream.strip() if dns_upstream.strip() else None
         self.db.commit()
         self.db.refresh(row)
         return row

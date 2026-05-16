@@ -81,6 +81,57 @@
     </div>
 
     <div class="neko-card neko-card-ears p-6">
+        <h2 class="text-lg neko-subheader mb-4">Forward proxy</h2>
+        <p class="text-sm text-neko-600 mb-4">
+            When enabled, each agent listens on this port as an HTTP/HTTPS forward proxy.
+            Devices point their proxy settings at <code>agent-ip:port</code> and traffic exits from the agent.
+            If <code>NEKO_AGENT_UPSTREAM_PROXY</code> is set on an agent, traffic exits from that VPS instead.
+        </p>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+                <label class="neko-label">Forward proxy port</label>
+                <input type="number" name="forward_proxy_port" min="0" max="65535"
+                       value="{{ settings.forward_proxy_port or 0 }}"
+                       class="neko-input w-full">
+                <p class="text-xs text-neko-500 mt-1">0 = disabled. Common choices: 3128, 8080, 8118.</p>
+            </div>
+            <div>
+                <label class="neko-label">Proxy auth (optional)</label>
+                <input type="text" name="forward_proxy_auth"
+                       value="{{ settings.forward_proxy_auth or '' }}"
+                       placeholder="username:password"
+                       class="neko-input w-full" autocomplete="off">
+                <p class="text-xs text-neko-500 mt-1">Leave blank for no authentication. Format: <code>user:pass</code>.</p>
+            </div>
+        </div>
+    </div>
+
+    <div class="neko-card neko-card-ears p-6">
+        <h2 class="text-lg neko-subheader mb-4">DNS forwarder</h2>
+        <p class="text-sm text-neko-600 mb-4">
+            When enabled, each agent listens on this port for DNS queries (UDP + TCP) and forwards them to the upstream resolver.
+            Point devices' DNS at <code>agent-ip:port</code>. Port 53 requires root/admin; use 5353 or another unprivileged port if needed.
+        </p>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+                <label class="neko-label">DNS listen port</label>
+                <input type="number" name="dns_port" min="0" max="65535"
+                       value="{{ settings.dns_port or 0 }}"
+                       class="neko-input w-full">
+                <p class="text-xs text-neko-500 mt-1">0 = disabled. Common choices: 53 (root only), 5353, 5300.</p>
+            </div>
+            <div>
+                <label class="neko-label">Upstream resolver</label>
+                <input type="text" name="dns_upstream"
+                       value="{{ settings.dns_upstream or '1.1.1.1:53' }}"
+                       placeholder="1.1.1.1:53"
+                       class="neko-input w-full" autocomplete="off">
+                <p class="text-xs text-neko-500 mt-1">Format: <code>host</code> or <code>host:port</code>. Examples: <code>1.1.1.1</code>, <code>8.8.8.8:53</code>, <code>9.9.9.9</code>.</p>
+            </div>
+        </div>
+    </div>
+
+    <div class="neko-card neko-card-ears p-6">
         <h2 class="text-lg neko-subheader mb-4">Apply to agents</h2>
         <div class="space-y-3">
             <label class="flex items-center gap-2 cursor-pointer">

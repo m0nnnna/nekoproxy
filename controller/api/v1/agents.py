@@ -12,7 +12,7 @@ from controller.config import settings as controller_settings
 from controller.database.database import get_db
 from controller.database.repositories import AgentRepository, GlobalSettingsRepository
 from controller.core.agent_manager import AgentManager
-from controller.core.agent_sync import get_agent_host
+from controller.core.agent_sync import get_agent_host, push_cert_refresh
 from controller.core.auth import require_api_token, require_agent_token, generate_token
 from shared.models import AgentRegistration, AgentHeartbeat, AgentConfig, AgentStatus
 
@@ -53,7 +53,11 @@ def _agent_auth(
 
 
 @router.post("/register")
-def register_agent(registration: AgentRegistration, db: Session = Depends(get_db)):
+def register_agent(
+    registration: AgentRegistration,
+    x_agent_token: Optional[str] = Header(default=None, alias="X-Agent-Token"),
+    db: Session = Depends(get_db),
+):
     """Register a new agent or update existing registration.
 
     Returns AgentStatus fields plus an 'agent_token' the agent must use for all
@@ -64,15 +68,23 @@ def register_agent(registration: AgentRegistration, db: Session = Depends(get_db
     if agent_secret:
         provided = registration.agent_secret or ""
         if not hmac.compare_digest(provided.encode(), agent_secret.encode()):
-            raise HTTPException(status_code=401, detail="Invalid or missing agent secret")
+            # Allow re-registration when the agent provides its existing valid token.
+            # This lets already-known agents re-register after a push-update even if
+            # the controller's agent_secret changed since the agent was first installed.
+            repo = AgentRepository(db)
+            wg_ip = registration.wireguard_ip if registration.wireguard_ip else None
+            existing = repo.get_by_wireguard_ip(wg_ip) if wg_ip else repo.get_by_hostname_internal(registration.hostname)
+            if not (x_agent_token and existing and existing.agent_token and
+                    hmac.compare_digest(x_agent_token, existing.agent_token)):
+                raise HTTPException(status_code=401, detail="Invalid or missing agent secret")
     manager = AgentManager(db)
     agent = manager.register_agent(registration)
 
-    # Issue / refresh per-agent token on every registration
-    if not agent.agent_token:
-        agent.agent_token = generate_token()
-        db.commit()
-        db.refresh(agent)
+    # Always issue a fresh token on registration so push-updated agents immediately
+    # have a valid token without depending on a stale file from before the update.
+    agent.agent_token = generate_token()
+    db.commit()
+    db.refresh(agent)
 
     return {
         "id": agent.id,
@@ -194,6 +206,31 @@ def delete_agent(
     if not repo.delete(agent_id):
         raise HTTPException(status_code=404, detail="Agent not found")
     return {"status": "deleted", "agent_id": agent_id}
+
+
+@router.post("/push-cert-refresh")
+async def push_cert_refresh_all(
+    db: Session = Depends(get_db),
+    _auth: None = Depends(require_api_token),
+):
+    """Push a cert-cache-clear + re-TOFU command to all reachable agents.
+
+    Use this after regenerating the controller's TLS certificate so agents
+    pick up the new cert without needing to be rebuilt or manually reconfigured.
+    """
+    result = await push_cert_refresh(db)
+    return result
+
+
+@router.post("/{agent_id}/push-cert-refresh")
+async def push_cert_refresh_one(
+    agent_id: int,
+    db: Session = Depends(get_db),
+    _auth: None = Depends(require_api_token),
+):
+    """Push a cert-cache-clear + re-TOFU command to a single agent."""
+    result = await push_cert_refresh(db, agent_ids=[agent_id])
+    return result
 
 
 @router.get("/{agent_id}/test-port", response_model=TestPortResponse)

@@ -72,6 +72,37 @@ def _agent_api_ssl_verify() -> bool:
         return False
 
 
+async def push_cert_refresh(db: Session, agent_ids: Optional[List[int]] = None) -> Dict[str, int]:
+    """POST /regen-cert to reachable agents so they clear stale controller certs and re-TOFU."""
+    agents = _get_agents_to_sync(db, agent_ids)
+    token = _controller_token()
+    ssl_verify = _agent_api_ssl_verify()
+
+    async def refresh_one(agent):
+        base = get_agent_base_url(agent)
+        if not base:
+            return False
+        url = f"{base.rstrip('/')}/regen-cert"
+        headers = {}
+        if token:
+            headers["X-Controller-Token"] = token
+        try:
+            async with httpx.AsyncClient(timeout=5.0, verify=ssl_verify) as client:
+                r = await client.post(url, headers=headers)
+                if r.status_code == 200:
+                    logger.info("Cert refresh pushed to agent %s", agent.hostname)
+                    return True
+                logger.warning("Cert refresh failed on %s: %s", agent.hostname, r.status_code)
+                return False
+        except Exception as e:
+            logger.warning("Failed to reach agent %s for cert refresh: %s", agent.hostname, e)
+            return False
+
+    outcomes = await asyncio.gather(*[refresh_one(a) for a in agents])
+    success = sum(1 for o in outcomes if o)
+    return {"success": success, "failed": len(outcomes) - success}
+
+
 async def trigger_sync_all_agents(db: Session, agent_ids: Optional[List[int]] = None) -> Dict[str, int]:
     """POST /trigger-sync to reachable agents (wireguard_ip or control_url)."""
     agents = _get_agents_to_sync(db, agent_ids)

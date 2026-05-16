@@ -59,6 +59,20 @@ class AgentSettings(BaseSettings):
     # Safe out-of-the-box: bind proxy to WireGuard only (no proxy listeners on public)
     listen_on_wireguard_only: bool = False
 
+    # Forward proxy server: accept HTTP/HTTPS proxy connections from devices on the network.
+    # Set a port to enable. Devices point their proxy settings at agent-ip:port.
+    # Traffic exits via upstream_proxy if set (routes out from VPS IP), else direct.
+    # Format: NEKO_AGENT_FORWARD_PROXY_PORT=8080
+    forward_proxy_port: int = 0  # 0 = disabled
+    # Optional Basic auth for the forward proxy: "username:password"
+    # NEKO_AGENT_FORWARD_PROXY_AUTH=myuser:mypassword
+    forward_proxy_auth: Optional[str] = None
+
+    # Upstream proxy: route all backend connections through this proxy (exit from VPS, not local IP).
+    # Format: socks5://host:port, socks4://host:port, or http://host:port
+    # Example: NEKO_AGENT_UPSTREAM_PROXY=socks5://1.2.3.4:1080
+    upstream_proxy: Optional[str] = None
+
     # Rate limiting: max new connections per client IP per minute; 0 = disabled
     rate_limit_per_minute: int = 60
     # When True, IPs that exceed rate limit are auto-blocked and reported to controller

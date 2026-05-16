@@ -6,8 +6,10 @@ import asyncio
 import logging
 from typing import Optional
 
+import json
+
 from fastapi import APIRouter, Depends, Request, Form, HTTPException, UploadFile, File, Cookie
-from fastapi.responses import HTMLResponse, RedirectResponse, Response
+from fastapi.responses import HTMLResponse, RedirectResponse, Response, StreamingResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
@@ -238,6 +240,40 @@ async def set_agent_internal(
     )
 
 
+@router.post("/agents/{agent_id}/route-via", response_class=HTMLResponse)
+async def set_agent_route_via(
+    request: Request,
+    agent_id: int,
+    db: Session = Depends(get_db),
+):
+    """Set (or clear) which agent this agent routes its outbound connections through."""
+    form = await request.form()
+    raw = form.get("route_via_agent_id", "")
+    route_via_id = int(raw) if raw and str(raw).isdigit() else None
+
+    repo = AgentRepository(db)
+    agent = repo.update_route_via(agent_id, route_via_id)
+    if not agent:
+        raise HTTPException(status_code=404, detail="Agent not found")
+
+    all_agents = repo.get_all()
+    await trigger_sync_all_agents(db, agent_ids=[agent_id])
+
+    opts = '<option value="">— direct —</option>'
+    for a in all_agents:
+        if a.id != agent_id:
+            sel = "selected" if a.id == route_via_id else ""
+            opts += f'<option value="{a.id}" {sel}>{a.hostname}</option>'
+
+    return HTMLResponse(
+        f'<select name="route_via_agent_id" '
+        f'hx-post="/agents/{agent_id}/route-via" hx-trigger="change" '
+        f'hx-swap="outerHTML" hx-target="this" '
+        f'class="neko-input text-sm py-0.5 px-1 min-w-[8rem]">'
+        f'{opts}</select>'
+    )
+
+
 @router.delete("/agents/{agent_id}", response_class=HTMLResponse)
 async def delete_agent_htmx(agent_id: int, _auth: None = Depends(_require_session), db: Session = Depends(get_db)):
     """Delete agent via htmx."""
@@ -420,6 +456,10 @@ async def settings_page(request: Request, _auth: None = Depends(_require_session
         "idle_connection_timeout_seconds": gs.idle_connection_timeout_seconds if gs and gs.idle_connection_timeout_seconds is not None else getattr(settings, "idle_connection_timeout_seconds", 0) or 0,
         "paranoid": gs.paranoid if gs and gs.paranoid is not None else getattr(settings, "paranoid", False),
         "agent_secret": (gs.agent_secret if gs else None) or settings.agent_secret or "",
+        "forward_proxy_port": gs.forward_proxy_port if gs and gs.forward_proxy_port else 0,
+        "forward_proxy_auth": gs.forward_proxy_auth if gs and gs.forward_proxy_auth else "",
+        "dns_port": gs.dns_port if gs and gs.dns_port else 0,
+        "dns_upstream": gs.dns_upstream if gs and gs.dns_upstream else "1.1.1.1:53",
     }
     return templates.TemplateResponse("settings.html", {
         "request": request,
@@ -437,6 +477,10 @@ async def apply_settings_htmx(
     geo_countries: str = Form(""),
     idle_connection_timeout_seconds: int = Form(0),
     agent_secret: str = Form(""),
+    forward_proxy_port: int = Form(0),
+    forward_proxy_auth: str = Form(""),
+    dns_port: int = Form(0),
+    dns_upstream: str = Form("1.1.1.1:53"),
     apply_to: str = Form("all"),
     db: Session = Depends(get_db)
 ):
@@ -453,6 +497,10 @@ async def apply_settings_htmx(
         idle_connection_timeout_seconds=idle_connection_timeout_seconds if idle_connection_timeout_seconds >= 0 else 0,
         paranoid=paranoid,
         agent_secret=agent_secret.strip() or None,
+        forward_proxy_port=forward_proxy_port if forward_proxy_port > 0 else 0,
+        forward_proxy_auth=forward_proxy_auth.strip() or None,
+        dns_port=dns_port if dns_port > 0 else 0,
+        dns_upstream=dns_upstream.strip() or None,
     )
     agent_id_list = None
     if apply_to == "selected" and agent_ids_raw:
@@ -587,6 +635,38 @@ async def live_connections_partial(request: Request, seconds: int = 60, _auth: N
         "request": request,
         "connections": connections,
     })
+
+
+@router.get("/live/stream")
+async def live_stream(request: Request, _auth: None = Depends(_require_session)):
+    """SSE endpoint: streams live connection events to the browser."""
+    from controller.core.live_events import live_events
+
+    q = live_events.subscribe()
+
+    async def event_generator():
+        # Replay history so the page loads with existing data
+        for channel in ("incoming", "dns", "forward", "email"):
+            for evt in reversed(live_events.get_history(channel)):
+                yield f"data: {json.dumps(evt)}\n\n"
+        # Stream new events as they arrive
+        try:
+            while True:
+                if await request.is_disconnected():
+                    break
+                try:
+                    evt = await asyncio.wait_for(q.get(), timeout=25)
+                    yield f"data: {json.dumps(evt)}\n\n"
+                except asyncio.TimeoutError:
+                    yield ": keepalive\n\n"
+        finally:
+            live_events.unsubscribe(q)
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @router.get("/stats", response_class=HTMLResponse)
@@ -761,7 +841,7 @@ async def apply_firewall_rules_htmx(request: Request, _auth: None = Depends(_req
         if not url:
             return False
         try:
-            async with httpx.AsyncClient(timeout=5.0) as client:
+            async with httpx.AsyncClient(timeout=5.0, verify=_agent_api_ssl_verify()) as client:
                 response = await client.post(url)
                 if response.status_code == 200:
                     logger.info(f"Triggered sync on agent {agent.hostname}")
@@ -1004,7 +1084,7 @@ async def apply_rules_htmx(request: Request, _auth: None = Depends(_require_sess
         if not url:
             return False
         try:
-            async with httpx.AsyncClient(timeout=5.0) as client:
+            async with httpx.AsyncClient(timeout=5.0, verify=_agent_api_ssl_verify()) as client:
                 response = await client.post(url)
                 if response.status_code == 200:
                     logger.info(f"Triggered sync on agent {agent.hostname}")

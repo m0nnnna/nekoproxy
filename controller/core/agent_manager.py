@@ -179,11 +179,33 @@ class AgentManager:
             geo_countries_raw = gs.geo_countries or settings.geo_countries or ""
             idle_timeout = gs.idle_connection_timeout_seconds if gs.idle_connection_timeout_seconds is not None else (getattr(settings, "idle_connection_timeout_seconds", 0) or 0)
             paranoid = gs.paranoid if gs.paranoid is not None else getattr(settings, "paranoid", False)
+            forward_proxy_port = gs.forward_proxy_port or 0
+            forward_proxy_auth = gs.forward_proxy_auth or None
+            dns_port = gs.dns_port or 0
+            dns_upstream = gs.dns_upstream or "1.1.1.1:53"
         else:
             geo_mode = (settings.geo_mode or "off").lower()
             geo_countries_raw = settings.geo_countries or ""
             idle_timeout = getattr(settings, "idle_connection_timeout_seconds", 0) or 0
             paranoid = getattr(settings, "paranoid", False)
+            forward_proxy_port = 0
+            forward_proxy_auth = None
+            dns_port = 0
+            dns_upstream = "1.1.1.1:53"
+
+        # Route via: if agent has a parent set, compute its upstream_proxy URL
+        upstream_proxy = None
+        route_via_id = getattr(agent, "route_via_agent_id", None)
+        if route_via_id and forward_proxy_port:
+            parent = self.agent_repo.get_by_id(route_via_id)
+            if parent:
+                parent_host = parent.wireguard_ip or parent.public_ip
+                if parent_host:
+                    if forward_proxy_auth and ":" in forward_proxy_auth:
+                        user, _, pwd = forward_proxy_auth.partition(":")
+                        upstream_proxy = f"http://{user}:{pwd}@{parent_host}:{forward_proxy_port}"
+                    else:
+                        upstream_proxy = f"http://{parent_host}:{forward_proxy_port}"
         geo_countries = [c.strip().upper() for c in geo_countries_raw.split(",") if c.strip()]
         if paranoid:
             if idle_timeout <= 0:
@@ -206,6 +228,11 @@ class AgentManager:
             geo_countries=geo_countries,
             idle_connection_timeout_seconds=idle_timeout,
             internal=getattr(agent, "internal", False),
+            forward_proxy_port=forward_proxy_port,
+            forward_proxy_auth=forward_proxy_auth,
+            upstream_proxy=upstream_proxy,
+            dns_port=dns_port,
+            dns_upstream=dns_upstream,
         )
 
     def _get_email_config(self, agent_id: int) -> Optional[AgentEmailConfig]:

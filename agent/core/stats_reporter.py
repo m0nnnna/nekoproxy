@@ -58,13 +58,15 @@ class StatsReporter:
     def record(self, stats):
         """Record a connection stats entry."""
         self._stats_queue.append({
-            "service_id": stats.service_id,
+            "service_id": getattr(stats, "service_id", None),
             "client_ip": stats.client_ip,
             "status": stats.status,
             "duration": stats.duration,
             "bytes_sent": stats.bytes_sent,
             "bytes_received": stats.bytes_received,
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.utcnow().isoformat(),
+            "proxy_type": getattr(stats, "proxy_type", "incoming"),
+            "target": getattr(stats, "target", None),
         })
 
     async def _report_loop(self):

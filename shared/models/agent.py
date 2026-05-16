@@ -43,6 +43,15 @@ class AgentConfig(BaseModel):
     idle_connection_timeout_seconds: int = 0
     # Internal agent: allow all proxy ports on public (including normally blocked e.g. SSH/DB) for internal use
     internal: bool = False
+    # Forward proxy server: port devices connect to for HTTP/HTTPS proxying (0 = disabled)
+    forward_proxy_port: int = 0
+    # Optional Basic auth for the forward proxy ("user:pass"); empty = no auth required
+    forward_proxy_auth: Optional[str] = None
+    # Upstream proxy URL to route this agent's outbound connections through (computed from route_via_agent_id)
+    upstream_proxy: Optional[str] = None
+    # DNS forwarder: port to listen on for DNS queries (0 = disabled); upstream = "host:port"
+    dns_port: int = 0
+    dns_upstream: str = "1.1.1.1:53"
 
 
 class AgentStatus(BaseModel):

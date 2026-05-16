@@ -10,6 +10,13 @@ from dataclasses import dataclass, field
 
 from agent.config import settings
 
+try:
+    from python_socks.async_.asyncio import Proxy as _SocksProxy
+    _SOCKS_AVAILABLE = True
+except ImportError:
+    _SocksProxy = None
+    _SOCKS_AVAILABLE = False
+
 logger = logging.getLogger(__name__)
 
 # Default User-Agent substrings that indicate AI/scraper bots (block and report)
@@ -31,11 +38,13 @@ class ConnectionStats:
     """Statistics for a single connection."""
     client_ip: str
     client_port: int
-    service_id: int
+    service_id: Optional[int]
     start_time: float = field(default_factory=time.time)
     bytes_sent: int = 0
     bytes_received: int = 0
     status: str = "connected"
+    proxy_type: str = "incoming"
+    target: Optional[str] = None
 
     @property
     def duration(self) -> float:
@@ -227,11 +236,21 @@ class TCPProxy:
         backend_writer: Optional[asyncio.StreamWriter] = None
 
         try:
-            # Connect to backend
-            backend_reader, backend_writer = await asyncio.wait_for(
-                asyncio.open_connection(self.backend_host, self.backend_port),
-                timeout=settings.connection_timeout
-            )
+            # Connect to backend (optionally via upstream proxy)
+            if settings.upstream_proxy and _SOCKS_AVAILABLE:
+                proxy = _SocksProxy.from_url(settings.upstream_proxy)
+                sock = await asyncio.wait_for(
+                    proxy.connect(dest_host=self.backend_host, dest_port=self.backend_port),
+                    timeout=settings.connection_timeout,
+                )
+                backend_reader, backend_writer = await asyncio.open_connection(sock=sock)
+            elif settings.upstream_proxy and not _SOCKS_AVAILABLE:
+                raise RuntimeError("NEKO_AGENT_UPSTREAM_PROXY is set but python-socks is not installed")
+            else:
+                backend_reader, backend_writer = await asyncio.wait_for(
+                    asyncio.open_connection(self.backend_host, self.backend_port),
+                    timeout=settings.connection_timeout,
+                )
 
             # If we peeked a chunk, send it first
             if first_chunk:

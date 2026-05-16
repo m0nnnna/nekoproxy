@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 
@@ -128,6 +129,46 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         if "duplicate column name" not in str(e).lower():
             logger.warning("Global settings migration (controller_token): %s", e)
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("ALTER TABLE agents ADD COLUMN route_via_agent_id INTEGER"))
+            conn.commit()
+        logger.info("Agents table: added route_via_agent_id column")
+    except Exception as e:
+        if "duplicate column name" not in str(e).lower():
+            logger.warning("Agents migration (route_via_agent_id): %s", e)
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("ALTER TABLE global_settings ADD COLUMN forward_proxy_port INTEGER DEFAULT 0"))
+            conn.commit()
+        logger.info("Global settings: added forward_proxy_port column")
+    except Exception as e:
+        if "duplicate column name" not in str(e).lower():
+            logger.warning("Global settings migration (forward_proxy_port): %s", e)
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("ALTER TABLE global_settings ADD COLUMN forward_proxy_auth VARCHAR(255)"))
+            conn.commit()
+        logger.info("Global settings: added forward_proxy_auth column")
+    except Exception as e:
+        if "duplicate column name" not in str(e).lower():
+            logger.warning("Global settings migration (forward_proxy_auth): %s", e)
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("ALTER TABLE global_settings ADD COLUMN dns_port INTEGER DEFAULT 0"))
+            conn.commit()
+        logger.info("Global settings: added dns_port column")
+    except Exception as e:
+        if "duplicate column name" not in str(e).lower():
+            logger.warning("Global settings migration (dns_port): %s", e)
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("ALTER TABLE global_settings ADD COLUMN dns_upstream VARCHAR(255)"))
+            conn.commit()
+        logger.info("Global settings: added dns_upstream column")
+    except Exception as e:
+        if "duplicate column name" not in str(e).lower():
+            logger.warning("Global settings migration (dns_upstream): %s", e)
     logger.info("Database initialized")
 
     # Initialize security tokens (generate if not already configured)
@@ -166,6 +207,10 @@ async def lifespan(app: FastAPI):
     finally:
         _db.close()
 
+    # Register event loop in live event bus so sync endpoints can push events safely
+    from controller.core.live_events import live_events as _live_events
+    _live_events.set_loop(asyncio.get_running_loop())
+
     # Start health monitor
     health_monitor = HealthMonitor()
     await health_monitor.start()
@@ -182,7 +227,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title=settings.app_name,
     description="Multi-agent proxy service controller",
-    version="3.0.0",
+    version="4.0.0",
     lifespan=lifespan
 )
 

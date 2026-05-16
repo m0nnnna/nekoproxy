@@ -1,4 +1,4 @@
-# NekoProxy
+# NekoProxy v4
 
 A distributed TCP/UDP proxy management system with centralized control. Deploy proxy agents across multiple servers and manage them from a single web interface.
 
@@ -6,38 +6,49 @@ A distributed TCP/UDP proxy management system with centralized control. Deploy p
 
 - **Centralized Management** – Control all proxy agents from a single web dashboard  
 - **TCP/UDP Proxying** – Forward traffic on any port to backend servers  
+- **Forward Proxy Server** – Agents act as HTTP(S) forward proxies; point devices or applications at the agent to route their outbound traffic  
+- **DNS Forwarder** – Agents act as DNS resolvers; point devices' DNS at the agent and queries are forwarded to any upstream resolver  
+- **Route-via Agent** – Internal/container agents chain their outbound traffic through a full VPS agent (exit from VPS IP, not local IP)  
+- **Upstream Proxy** – Route agent backend connections through a SOCKS5/HTTP proxy for VPS IP exit  
 - **Firewall Rules** – Block or allow ports on specific interfaces (public/WireGuard)  
 - **IP Blocklist** – Block connections from specific IP addresses  
 - **Real-time Sync** – Push configuration changes to agents instantly  
 - **Health Monitoring** – Track agent status, connections, and resource usage  
 - **Alerts** – Get notified of suspicious activity and security events  
+- **Auto-TLS** – Controller and agents auto-generate self-signed certificates; agents use Trust On First Use (TOFU) cert pinning with self-healing on cert changes  
+- **Push Updates** – Upload a new binary in the web UI and push it to agents over the network; agents replace themselves and restart  
+- **Live Traffic View** – Real-time per-channel traffic monitor streamed to the browser via SSE; four separate panels (Incoming, DNS, Forward Outbound, Email) fed live from all agents  
 
 ## Architecture
 
 ```
-┌─────────────────┐         ┌─────────────────┐
-│   Controller    │◄───────►│     Agent 1     │
-│   (Web UI)      │   WG    │  (Proxy Server) │
-│   Port 8001     │         │                 │
-└────────┬────────┘         └─────────────────┘
-         │
-         │ WireGuard        ┌─────────────────┐
-         └─────────────────►│     Agent 2     │
-                            │  (Proxy Server) │
-                            └─────────────────┘
+┌─────────────────┐         ┌──────────────────────┐
+│   Controller    │◄───────►│   VPS Agent          │
+│   (Web UI)      │   WG    │   Forward Proxy :8080 │
+│   Port 8001     │         │   Exits to internet  │
+└────────┬────────┘         └──────────┬───────────┘
+         │                             ▲
+         │ WireGuard                   │ upstream_proxy
+         │                             │
+         └─────────────────►┌──────────┴───────────┐
+                            │   Internal Agent     │
+                            │   Forward Proxy :8080 │
+                            │   (routes via VPS)   │
+                            └──────────────────────┘
 ```
 
 - **Controller**: Central management server with web UI  
-- **Agents**: Deployed on proxy servers, execute forwarding rules and firewall policies  
-- **Communication**: Agents connect to controller over WireGuard VPN  
+- **Full agents**: Deployed on VPS/proxy servers with WireGuard; handle reverse proxy services and act as forward proxy exit nodes  
+- **Internal agents**: Deployed on local machines/containers without WireGuard; use `control_url` so the controller can reach them; can route outbound traffic through a full agent  
+- **Communication**: Agents connect to controller over WireGuard VPN; internal agents use direct URL  
 
-**Standard ports:** The controller listens on **8001** and the agent control API on **8002** by default. These are the expected ports for sync, push-update, and agent↔controller communication.  
+**Standard ports:** Controller listens on **8001**, agent control API on **8002** by default.
 
 ## Requirements
 
 - Python 3.10+ (for development)  
 - Docker (for building Linux binaries)  
-- WireGuard (for secure agent-controller communication)  
+- WireGuard (for full agent communication; internal agents don't need it)  
 
 ## Quick Start
 
@@ -78,7 +89,7 @@ The installer will prompt for:
 - Listen address and port (default: 0.0.0.0:8001)
 - Database location
 
-Access the web UI at `http://<controller-ip>:8001`. To use HTTPS (recommended), run the controller behind Nginx on port 443 and point agents at `https://<controller>:443` — see [docs/HTTPS-SETUP.md](docs/HTTPS-SETUP.md).
+Access the web UI at `http://<controller-ip>:8001`. The controller auto-generates a self-signed TLS certificate on first run; agents use TOFU (Trust On First Use) to pin it automatically. To use a CA-signed cert, set `NEKO_SSL_CERTFILE` and `NEKO_SSL_KEYFILE` — see [docs/HTTPS-SETUP.md](docs/HTTPS-SETUP.md).
 
 ### Installing an Agent
 
@@ -89,18 +100,16 @@ sudo ./install-agent.sh
 ```
 
 The installer will prompt for:
-- Controller URL (e.g., `http://10.0.0.1:8001`)
-- WireGuard IP of this agent
+- Controller URL (e.g., `https://10.0.0.1:8001`)
+- WireGuard IP of this agent (leave blank for internal agents)
 - Hostname for identification
 
-The same install and update scripts work on **Alpine Linux** (OpenRC): they detect systemd vs OpenRC and create the appropriate service (systemd unit or `/etc/init.d/` script). Use the binaries from `dist/linux-alpine/` when building for Alpine.
+The same install and update scripts work on **Alpine Linux** (OpenRC): they detect systemd vs OpenRC and create the appropriate service. Use the binaries from `dist/linux-alpine/` when building for Alpine.
 
 ### Updating (Linux)
 
-To upgrade the binary without changing config or data, use the update scripts from `dist/linux/` (after a Docker build):
-
 ```bash
-# Controller: replace binary then restart (default: use ./nekoproxy-controller in same dir)
+# Controller
 sudo ./update-controller.sh
 # Or: sudo ./update-controller.sh /path/to/new/nekoproxy-controller
 
@@ -109,27 +118,26 @@ sudo ./update-agent.sh
 # Or: sudo ./update-agent.sh /path/to/new/nekoproxy-agent
 ```
 
-On Windows, use `dist\windows\update-controller.ps1` for the controller and `dist\windows\update-agent.ps1` for the agent (each takes `-BinaryPath` to the new exe).
+On Windows, use `dist\windows\update-controller.ps1` and `dist\windows\update-agent.ps1`.
 
-### Windows: run as a service (no user logged in)
+### Push Update (from Web UI)
 
-The Windows builds can install themselves as a Windows service so they run without a user logged in. Use the **install scripts** in the same folder as the exe to register the service (they run the exe with `install` so the service uses that exe in that directory):
+Upload a new agent binary on the **Agents** page and click **Update** next to any agent. The controller streams the binary to the agent's ControlAPI; the agent replaces its own binary and restarts. The agent's token, config, and data files are preserved across updates.
 
-**Using install scripts (recommended)** — run PowerShell as Administrator from the folder containing the exe:
+### Windows: run as a service
 
 ```powershell
-# Controller: register service from this directory, optionally start
+# Controller
 .\install-controller.ps1
-.\install-controller.ps1 -StartService   # install and start
-.\install-controller.ps1 -Uninstall     # remove service
+.\install-controller.ps1 -StartService
 
-# Agent (place agent.env in same folder for config)
+# Agent (place agent.env in same folder as exe)
 .\install-agent.ps1
 .\install-agent.ps1 -StartService
 .\install-agent.ps1 -Uninstall
 ```
 
-**Or call the exe directly:**
+Or call the exe directly:
 
 ```powershell
 .\nekoproxy-controller.exe install
@@ -138,105 +146,268 @@ The Windows builds can install themselves as a Windows service so they run witho
 .\nekoproxy-controller.exe remove
 ```
 
-Install and start must be run as **Administrator**. After `install`, configure the agent/controller (e.g. `agent.env` or `.env` in the same directory as the exe) before starting. The update scripts (`update-controller.ps1`, `update-agent.ps1`) detect and restarts the service if it is installed. Running the exe with no arguments starts the app in the foreground instead of as a service.
+## Forward Proxy & Traffic Routing
 
-## Firewall management and auto-blocking
+### Forward Proxy Server
+
+Agents can act as HTTP(S) forward proxies. Any device or application pointing its proxy settings at the agent will have its traffic forwarded — optionally exiting from a VPS IP.
+
+Enable in **Settings → Forward proxy port** (e.g. `8080`). All agents will sync and start a forward proxy on that port.
+
+Optional Basic auth: set **Forward proxy auth** to `user:password` in Settings.
+
+Point an application at the agent:
+```
+HTTP proxy: agent-ip:8080
+HTTPS proxy: agent-ip:8080
+```
+
+Or for CLI tools:
+```bash
+export http_proxy=http://agent-ip:8080
+export https_proxy=http://agent-ip:8080
+```
+
+### Route-via Agent (exit via VPS)
+
+For internal agents (local machines, containers) that should appear to come from a VPS IP:
+
+1. On the **Agents** page, set the **Route via** dropdown on the internal agent to the VPS agent.
+2. The controller automatically computes the upstream proxy URL and pushes it to the internal agent.
+3. The internal agent's forward proxy chains through the VPS agent — traffic exits from the VPS IP.
+
+**What gets routed via VPS:**
+- ✅ Traffic from applications configured to use the forward proxy (via `http_proxy` env or app proxy settings)
+- ✅ Reverse proxy backend connections (services the agent proxies to backends)
+- ❌ Direct TCP from the machine (raw sockets without proxy awareness) — use a VPN for that
+
+**Example — Misskey/fediverse:** Add to `.config/default.yml`:
+```yaml
+proxy: http://localhost:8080
+```
+Restart Misskey. All federation and outbound requests will exit via the VPS.
+
+**Verify it's working:**
+```bash
+# On the internal machine — should return VPS IP
+curl -x http://localhost:8080 https://ifconfig.me
+
+# Watch live on the VPS
+ss -tnp | grep 8080
+```
+
+Or check **OPNsense → Firewall → Log Files → Live View**, filter by the internal machine's source IP — you should only see connections to the VPS IP on port 8080, not direct external connections.
+
+### Forward proxy & DNS binding security
+
+For agents with a WireGuard IP configured, the forward proxy and DNS forwarder bind exclusively to the **WireGuard interface IP** — not `0.0.0.0`. This means they are unreachable from the public internet at the socket level, independent of any firewall rules. Internal agents (no WireGuard) bind to `listen_ip` as usual, protected by their local network topology.
+
+The iptables / Windows Firewall baseline provides a second layer: the forward proxy and DNS ports are not in the list of ports ACCEPTed on the public interface, so they are dropped at the network level even on older setups.
+
+### Upstream Proxy (manual, per-agent env)
+
+To route an agent's backend connections through a SOCKS5/HTTP proxy without using the route-via UI:
+
+```bash
+# In agent.env
+NEKO_AGENT_UPSTREAM_PROXY=socks5://1.2.3.4:1080
+# or
+NEKO_AGENT_UPSTREAM_PROXY=http://1.2.3.4:8080
+```
+
+Requires `python-socks[asyncio]` to be installed (included in the bundled binary).
+
+## DNS Forwarder
+
+Agents can act as DNS resolvers for devices on the network. DNS queries arrive on the configured port (UDP and TCP) and are forwarded byte-for-byte to an upstream resolver. No DNS parsing or caching — pure relay.
+
+### Enabling
+
+In **Settings → DNS forwarder**:
+
+- **DNS listen port** – port agents listen on for DNS queries (0 = disabled). Common choices:
+  - `53` – standard DNS port; requires root/admin on Linux
+  - `5353` – unprivileged alternative (avoids needing root)
+  - `5300` – another common unprivileged choice
+- **Upstream resolver** – where queries are forwarded. Format: `host` or `host:port` (default port: 53).
+
+Examples:
+```
+1.1.1.1          → Cloudflare, port 53
+1.1.1.1:53       → same, explicit port
+8.8.8.8:53       → Google
+9.9.9.9          → Quad9
+```
+
+Click **Save & Apply** to push to all agents.
+
+### Pointing devices at the agent
+
+```
+DNS server: <agent-wireguard-ip>:<dns-port>
+```
+
+For example with `dns_port = 5353`:
+```bash
+# Test resolution
+dig @10.0.0.2 -p 5353 example.com
+
+# Linux systemd-resolved override
+echo "DNS=10.0.0.2:5353" >> /etc/systemd/resolved.conf
+systemctl restart systemd-resolved
+
+# Or set per-interface via nmcli
+nmcli con mod eth0 ipv4.dns "10.0.0.2"
+```
+
+### Binding and security
+
+On full agents (WireGuard IP set), the DNS forwarder binds to the **WireGuard IP only**. It is not reachable from the public internet regardless of firewall state. On internal agents (no WireGuard) it binds to `listen_ip`.
+
+### Verifying
+
+```bash
+# Check the forwarder is listening (replace port as configured)
+ss -ulnp | grep 5353   # UDP
+ss -tlnp | grep 5353   # TCP
+
+# Test a query
+dig @<agent-wireguard-ip> -p 5353 example.com
+
+# Agent logs
+journalctl -u nekoproxy-agent | grep "DNS forwarder"
+```
+
+## Live Traffic View
+
+The **Live** page shows real-time connection events streamed from all agents to the browser via Server-Sent Events (SSE). Traffic is split into four independent panels:
+
+| Panel | Source |
+|---|---|
+| **Incoming** | TCP/UDP reverse-proxy service connections |
+| **DNS** | DNS forwarder queries (per UDP/TCP lookup) |
+| **Forward Outbound** | HTTP CONNECT tunnels and plain HTTP proxy requests |
+| **Email** | Postfix mail log events (delivered, blocked, deferred, bounced) |
+
+Each panel holds the last 100 events, newest on top, and updates automatically without any page refresh. A green dot in the top-right corner indicates the SSE stream is connected; it turns red and reconnects automatically if the connection drops.
+
+### How it works
+
+- Agents tag every connection event with a `proxy_type` field (`incoming`, `dns`, `forward`) and batch-report them to the controller as usual.
+- The controller routes each event into an in-memory ring buffer (100 entries per channel) and pushes it to all connected browser SSE subscribers.
+- DNS and forward proxy events are **live-only** — they are not stored in the database, keeping storage clean.
+- Incoming (reverse-proxy) connections are stored in the database as before, and also pushed to the live view.
+- Email events come from the existing Postfix log collector (`/var/log/mail.log`) and are stored in the database and pushed live.
+
+### Latency
+
+Events appear within one `stats_report_interval` (configurable, default ~10 s). For near-real-time monitoring set `NEKO_AGENT_STATS_REPORT_INTERVAL=2` in `agent.env` on the agents you want to watch closely.
+
+### Email panel (Postfix)
+
+The email panel requires Postfix to be deployed on the agent (via the Email setup flow). The agent tails `/var/log/mail.log`, parses queue events (queued, sent, deferred, bounced, rejected), and ships them to the controller. No additional configuration is needed once Postfix is deployed.
+
+## TLS / Certificate Management
+
+### Auto-generated certificates (default)
+
+The controller auto-generates a self-signed TLS certificate on first run. The cert includes all detected local IPs — including WireGuard interface IPs — as Subject Alternative Names (SANs), so agents can verify it when connecting via any of the controller's IPs.
+
+On each startup the controller checks whether the existing cert's SANs cover all current interface IPs. If new IPs have been added (e.g. a WireGuard interface brought up after first install), the cert is automatically regenerated. Agents will detect the change on their next heartbeat/sync, clear their cached cert, and re-TOFU the new one automatically.
+
+Agents use **TOFU (Trust On First Use)** — they download and cache the controller cert on first registration, then verify it on all future connections.
+
+### Cert regeneration
+
+If the controller's cert changes (e.g. after reinstall), push a cert refresh from the controller:
+
+**Settings → Push cert refresh to all agents** — agents clear their cached cert and re-TOFU the new one automatically, no rebuild needed.
+
+### Custom certificates
+
+Set in the controller's env:
+```
+NEKO_SSL_CERTFILE=/path/to/cert.pem
+NEKO_SSL_KEYFILE=/path/to/key.pem
+```
+
+See [docs/HTTPS-SETUP.md](docs/HTTPS-SETUP.md) for Nginx reverse proxy setup.
+
+## Firewall Management and Auto-blocking
 
 The system acts as a **firewall manager**: agents block aggressively and report blocks to the controller; the controller pushes the blocklist to all agents so every node stays in sync.
 
 ### Agent-side (aggressive)
 
-- **Security alerts → auto-block**  
-  When the security monitor hits thresholds (e.g. SSH failures, mail auth failures, relay denied, port scan), the agent:
-  1. Adds the IP to the local blocklist (proxy + iptables `NEKOPROXY_BLOCKLIST` chain).
-  2. Reports the IP to the controller via `POST /api/v1/blocklist/report`.
-  3. Sends the alert to the controller as before.
-
-- **HTTP scraper / AI bot detection**  
-  For TCP (HTTP) traffic, the agent peeks at the first request. If the `User-Agent` matches known scrapers (e.g. GPTBot, Claude-Web, CCBot), the connection is dropped and the IP is blocked and reported as above.
-
-- **Blocklist in iptables**  
-  Blocked IPs are dropped in an iptables chain (`NEKOPROXY_BLOCKLIST`) before port-based rules, so traffic from those IPs is blocked even outside the proxy.
+- **Security alerts → auto-block:** When the security monitor hits thresholds (SSH failures, mail auth failures, port scan), the agent blocks the IP locally (proxy + iptables) and reports it to the controller.
+- **HTTP scraper / AI bot detection:** TCP (HTTP) traffic with known scraper User-Agents (GPTBot, Claude-Web, CCBot, etc.) is dropped and the IP is blocked and reported.
+- **Blocklist in iptables:** Blocked IPs are dropped in a `NEKOPROXY_BLOCKLIST` chain before port-based rules.
 
 ### Controller-side
 
-- **Blocklist is the source of truth**  
-  Add/remove IPs in the Blocklist or Firewall UI. Changes are **pushed to all healthy agents** immediately (trigger-sync); no need to click “Apply” for blocklist add/remove.
+- **Blocklist is source of truth:** Add/remove IPs in the Blocklist or Firewall UI. Changes push to all healthy agents immediately.
+- **Agent-reported blocks:** When an agent reports an IP, the controller adds it and syncs all agents.
+- **Block from alert:** From the Alerts page, "Block IP" adds the IP and triggers sync.
 
-- **Agent-reported blocks**  
-  When an agent reports an IP via `/api/v1/blocklist/report`, the controller adds it to the blocklist and triggers sync to all agents, so every agent gets the new block.
+### Public vs WireGuard baseline
 
-- **Block from alert**  
-  From the Alerts page, “Block IP” adds the IP to the blocklist and triggers sync to all agents.
+Agents apply **auto-generated baseline rules** so the **public interface** is default-deny (only proxy ports and established traffic) while the **WireGuard interface** stays permissive.
 
-### Flow summary
-
-1. Agent detects abuse (logs or HTTP User-Agent) → blocks IP locally (proxy + iptables) → reports to controller.
-2. Controller adds IP to blocklist → triggers sync on all agents.
-3. All agents receive updated config (including blocklist) and apply it (proxy blocklist + firewall blocklist chain).
-
-### Public vs WireGuard baseline (lock down public, keep WG free)
-
-Agents can apply **auto-generated baseline rules** so the **public interface** is default-deny (only proxy ports and established traffic allowed) while the **WireGuard interface** stays permissive. That way:
-
-- **Public**: SSH (22) and other ports not in your proxy services are dropped at the firewall, so you get fewer SSH attempt alerts and less exposure. Only the ports you actually proxy (from controller-assigned services) are allowed for new connections.
-- **WireGuard**: Controller sync, SSH over WG, and other management traffic keep working.
-
-Enabled by default. Set in agent env:
-
-- `NEKO_AGENT_HARDEN_PUBLIC_INTERFACE=true` (default) – public interface = default-deny, only proxy ports + ESTABLISHED,RELATED.
-- `NEKO_AGENT_ALLOW_WIREGUARD_FREEDOM=true` (default) – WireGuard interface = allow.
-
-Public interface is chosen as the default-route interface, or the first physical interface that is **not** WireGuard (so VPN-as-gateway setups still get the right “public” interface).
-
-**Safe-out-of-the-box extras:** Dangerous ports (SSH, RDP, DBs) are never allowed on public even if added as a service. Rate limiting (default 60/min per IP) with optional auto-block. Option to bind proxy to WireGuard only (`NEKO_AGENT_LISTEN_ON_WIREGUARD_ONLY=true`). Optional agent registration secret (`NEKO_AGENT_SECRET` on controller, `NEKO_AGENT_AGENT_SECRET` on agents).
+- `NEKO_AGENT_HARDEN_PUBLIC_INTERFACE=true` (default) – public interface = default-deny
+- `NEKO_AGENT_ALLOW_WIREGUARD_FREEDOM=true` (default) – WireGuard interface = allow
+- `NEKO_AGENT_LISTEN_ON_WIREGUARD_ONLY=true` – bind proxy listeners to WireGuard IP only
 
 ## Configuration
 
 ### Controller
 
-Configuration via environment variables or `/etc/nekoproxy/controller.env`:
+Configuration via environment variables or `.env` in the working directory:
 
 | Variable | Default | Description |
-|--------|---------|-------------|
+|----------|---------|-------------|
 | `NEKO_HOST` | `0.0.0.0` | Listen address |
 | `NEKO_PORT` | `8001` | Listen port |
 | `NEKO_DATABASE_URL` | `sqlite:///./nekoproxy.db` | Database connection |
 | `NEKO_DEBUG` | `false` | Enable debug mode |
-| `NEKO_GEO_MODE` | `off` | Geo filtering: `off`, `allowlist`, or `blocklist` (pushed to agents) |
-| `NEKO_GEO_COUNTRIES` | — | Comma-separated ISO 3166-1 alpha-2 codes (e.g. `US,CA,GB` or `CN,RU,KP`) |
-| `NEKO_IDLE_CONNECTION_TIMEOUT_SECONDS` | `0` | Idle connection timeout for proxies (0 = disabled) |
-| `NEKO_PARANOID` | `false` | DDoS lockdown: force 120s idle timeout, default geo blocklist (CN,RU,KP,IR) if geo off |
+| `NEKO_SSL_CERTFILE` | — | TLS certificate (auto-generated if not set) |
+| `NEKO_SSL_KEYFILE` | — | TLS private key (auto-generated if not set) |
+| `NEKO_API_TOKEN` | — | Admin API token (auto-generated on first run) |
+| `NEKO_CONTROLLER_TOKEN` | — | Token sent to agents' ControlAPI (auto-generated) |
+| `NEKO_AGENT_SECRET` | — | Optional registration secret agents must send |
+| `NEKO_GEO_MODE` | `off` | Geo filtering: `off`, `allowlist`, or `blocklist` |
+| `NEKO_GEO_COUNTRIES` | — | Comma-separated ISO codes (e.g. `US,CA,GB`) |
+| `NEKO_IDLE_CONNECTION_TIMEOUT_SECONDS` | `0` | Idle connection timeout (0 = disabled) |
+| `NEKO_PARANOID` | `false` | DDoS lockdown: 120s idle timeout, default geo blocklist |
+
+Most settings are also configurable from **Settings** in the web UI without restarting.
 
 ### Agent
 
-Configuration via environment variables or `/etc/nekoproxy/agent.env`:
+Configuration via environment variables or `agent.env` in the same directory as the binary:
 
 | Variable | Default | Description |
-|--------|---------|-------------|
+|----------|---------|-------------|
 | `NEKO_AGENT_CONTROLLER_URL` | `http://localhost:8001` | Controller URL |
-| `NEKO_AGENT_WIREGUARD_IP` | — | Agent WireGuard IP (required) |
+| `NEKO_AGENT_WIREGUARD_IP` | — | Agent WireGuard IP (omit for internal agents) |
 | `NEKO_AGENT_HOSTNAME` | System hostname | Display name |
 | `NEKO_AGENT_API_PORT` | `8002` | Control API port |
-| `NEKO_AGENT_HARDEN_PUBLIC_INTERFACE` | `true` | Default-deny on public interface, allow only proxy ports + established |
-| `NEKO_AGENT_ALLOW_WIREGUARD_FREEDOM` | `true` | Allow WireGuard interface (controller, SSH over WG) |
-| `NEKO_AGENT_LISTEN_ON_WIREGUARD_ONLY` | `false` | Bind proxy to WireGuard IP only (no proxy on public) |
-| `NEKO_AGENT_RATE_LIMIT_PER_MINUTE` | `60` | Max new connections per client IP per minute; 0 = disabled |
-| `NEKO_AGENT_RATE_LIMIT_AUTO_BLOCK` | `true` | Auto-block and report IPs that exceed rate limit |
-| `NEKO_AGENT_CONTROL_URL` | — | Optional base URL for controller to reach this agent (e.g. `http://127.0.0.1:8002`) so Sync/push-update work when agent has no WireGuard IP |
-| `NEKO_AGENT_AGENT_SECRET` | — | Optional; must match controller `NEKO_AGENT_SECRET` to register |
-| `NEKO_AGENT_GEOLITE2_DB_PATH` | — | Path to MaxMind GeoLite2-Country.mmdb for geo allow/block (optional) |
-| `NEKO_AGENT_PARANOID` | `false` | One env for DDoS lockdown: 30/min rate limit, WG-only listen, auto-block on rate limit |
+| `NEKO_AGENT_CONTROL_URL` | — | URL for controller to reach this agent (required for internal agents, e.g. `https://127.0.0.1:8002`) |
+| `NEKO_AGENT_CONTROL_BIND_IP` | — | Bind ControlAPI to this IP (default: WireGuard IP or `127.0.0.1`) |
+| `NEKO_AGENT_FORWARD_PROXY_PORT` | `0` | Forward proxy listen port (0 = disabled; override for env-only config, normally set via controller Settings) |
+| `NEKO_AGENT_FORWARD_PROXY_AUTH` | — | Forward proxy Basic auth `user:password` |
+| `NEKO_AGENT_UPSTREAM_PROXY` | — | Route backend connections through this proxy (socks5://, socks4://, http://) |
+| `NEKO_AGENT_HARDEN_PUBLIC_INTERFACE` | `true` | Default-deny on public interface |
+| `NEKO_AGENT_ALLOW_WIREGUARD_FREEDOM` | `true` | Allow all on WireGuard interface |
+| `NEKO_AGENT_LISTEN_ON_WIREGUARD_ONLY` | `false` | Bind proxy to WireGuard IP only |
+| `NEKO_AGENT_RATE_LIMIT_PER_MINUTE` | `60` | Max new connections per IP per minute; 0 = disabled |
+| `NEKO_AGENT_RATE_LIMIT_AUTO_BLOCK` | `true` | Auto-block IPs that exceed rate limit |
+| `NEKO_AGENT_AGENT_SECRET` | — | Must match `NEKO_AGENT_SECRET` on controller if set |
+| `NEKO_AGENT_GEOLITE2_DB_PATH` | — | Path to MaxMind GeoLite2-Country.mmdb |
+| `NEKO_AGENT_PARANOID` | `false` | DDoS lockdown preset |
 
-**Controller URL with HTTPS:** Use `https://your-controller:443` (or `https://...` with no port) when the controller is behind Nginx; see [docs/HTTPS-SETUP.md](docs/HTTPS-SETUP.md).
+**Internal agents** (no WireGuard): omit `NEKO_AGENT_WIREGUARD_IP` and set `NEKO_AGENT_CONTROL_URL` so the controller can reach the agent for sync and push-update. Mark the agent as **Internal** in the web UI to allow all proxy ports on the public interface.
 
-**Windows agent config:** Put an `agent.env` (or `.env`) file in the same directory as `nekoproxy-agent.exe`. Use the same env vars as Linux (e.g. `NEKO_AGENT_CONTROLLER_URL=http://your-controller:8001`, `NEKO_AGENT_HOSTNAME=desktop1`). Omit `NEKO_AGENT_WIREGUARD_IP` for **internal agents** (no WireGuard). For sync and push-update to work from the controller when the agent has no WireGuard IP (e.g. same-machine or Windows), set **`NEKO_AGENT_CONTROL_URL`** to the URL the controller can use to reach the agent (e.g. `http://127.0.0.1:8002` when controller and agent run on the same host).
-
-**Geo filtering:** Set `NEKO_GEO_MODE` and `NEKO_GEO_COUNTRIES` on the controller; install `geoip2` and set `NEKO_AGENT_GEOLITE2_DB_PATH` on agents (download GeoLite2-Country.mmdb from MaxMind).
-
-**Idle connection timeout:** Set `NEKO_IDLE_CONNECTION_TIMEOUT_SECONDS` on the controller (e.g. 300); agents close TCP connections and UDP sessions after that many seconds with no data.
-
-**Paranoid preset:** Set `NEKO_AGENT_PARANOID=true` on agents and/or `NEKO_PARANOID=true` on the controller for maximum lockdown (stricter rate limit, WG-only listen, idle timeout, default geo blocklist).
+**Route-via:** Set in the **Agents** page web UI — no env var needed. The controller computes and pushes the `upstream_proxy` URL automatically.
 
 ## Web UI Pages
 
@@ -244,24 +415,46 @@ Configuration via environment variables or `/etc/nekoproxy/agent.env`:
 Overview of system status, agent health, and recent connections.
 
 ### Agents
-View and manage connected proxy agents, including health status and resource usage. You can **upload an agent binary** (Linux or Windows) and use **Update** per agent to push it over the WireGuard link; the agent saves the binary, runs its update script (or Windows service stop/copy/start), and restarts with the new version. No need to copy the binary to each proxy by hand.
+View and manage connected agents. Per-agent controls:
+- **Internal** toggle – allows all proxy ports on the public interface (for local/container agents)
+- **Route via** dropdown – select which full agent this agent's forward proxy chains through (for VPS exit routing)
+- **Update** button – push a new binary to this agent (upload binary first at the top of the page)
+- **Remove** – deregister the agent
+
+### Settings
+Global configuration pushed to all agents:
+- Geo filtering mode and country list
+- Idle connection timeout
+- Paranoid preset
+- **Forward proxy port** – enables the HTTP(S) forward proxy on all agents
+- **Forward proxy auth** – optional Basic auth for the forward proxy (`user:password`)
+- **DNS listen port** – enables the DNS forwarder on all agents
+- **Upstream resolver** – DNS upstream (e.g. `1.1.1.1:53`)
+- Agent registration secret
+- Push cert refresh to all agents
 
 ### Rules (Proxy Rules)
-- Listen Port  
-- Backend target  
-- Protocol (TCP/UDP)  
-- Deployment target (specific or all agents)  
+- Listen port, backend target, protocol (TCP/UDP)
+- Deploy to specific agent or all agents
 
 ### Firewall
-- Port-based allow/deny rules  
-- Interface types: `public`, `wireguard`, or specific interfaces  
-- **Test port:** On the Firewall page, use "Test port reachability" to check from the controller whether a given port on an agent is reachable (e.g. confirm a port is blocked after applying rules).  
+- Port-based allow/deny rules per interface
+- **Test port reachability** – verify from controller that a port on an agent is blocked or open
 
 ### Blocklist
 Block connections from specific IP addresses before proxying.
 
 ### Alerts
-Security alerts for suspicious activity.
+Security alerts for suspicious activity, with one-click block.
+
+### Live
+Real-time traffic monitor with four panels streamed via SSE:
+- **Incoming** – reverse-proxy connections (agent, service, client IP, status, duration, bytes)
+- **DNS** – DNS resolver queries (agent, client IP, status, round-trip time, bytes)
+- **Forward Outbound** – HTTP/HTTPS proxy tunnels (agent, destination host:port, client IP, status, duration, bytes)
+- **Email** – Postfix mail events (agent, from, to, status, message size)
+
+A green dot indicates the live stream is connected. Each panel is collapsible and holds the last 100 events.
 
 ### Stats
 Connection statistics and traffic metrics.
@@ -270,12 +463,90 @@ Connection statistics and traffic metrics.
 
 Base path: `/api/v1/`
 
-| Endpoint | Method | Description |
-|--------|--------|-------------|
-| `/agents/register` | POST | Register new agent |
-| `/agents/{id}/heartbeat` | POST | Agent heartbeat |
-| `/agents/{id}/config` | GET | Fetch agent configuration |
-| `/agents/{id}/stats` | POST | Report stats |
+| Endpoint | Method | Auth | Description |
+|----------|--------|------|-------------|
+| `/agents/register` | POST | agent_secret (optional) | Register or re-register agent |
+| `/agents/{id}/heartbeat` | POST | agent token | Agent heartbeat |
+| `/agents/{id}/config` | GET | agent token | Fetch agent configuration |
+| `/agents/{id}/push-update` | POST | admin | Push binary update to agent |
+| `/agents/push-cert-refresh` | POST | admin | Push cert re-TOFU to all agents |
+| `/agents/{id}/push-cert-refresh` | POST | admin | Push cert re-TOFU to one agent |
+| `/agents/{id}/route-via` | POST | admin | Set route-via agent |
+| `/agents/{id}/internal` | POST | admin | Toggle internal flag |
+
+## Security
+
+- Controller and agents communicate over WireGuard; ControlAPI bound to WireGuard IP by default  
+- **Forward proxy and DNS forwarder bind to the WireGuard IP** on full agents — not `0.0.0.0`; unreachable from the public internet at the socket level  
+- iptables / Windows Firewall baseline: public interface is default-deny; only configured service ports are accepted; forward proxy and DNS ports are never opened on the public interface  
+- Per-agent tokens issued on every registration; agents auto-recover on 401 by re-registering  
+- Known agents (with valid existing token) can re-register even if the controller's `agent_secret` changed — prevents push-update failures after security config changes  
+- Controller token (`NEKO_CONTROLLER_TOKEN`) authenticates controller→agent ControlAPI calls  
+- Dedicated iptables chain (`NEKOPROXY`) for blocklist and rules  
+- Rate limiting with optional auto-block  
+- Controller should not be directly public-facing  
+
+## Troubleshooting
+
+### Agent not connecting
+```bash
+wg show
+cat /etc/nekoproxy/agent.env   # check NEKO_AGENT_CONTROLLER_URL
+journalctl -u nekoproxy-agent -f
+```
+
+### Push-update fails / 401 after update
+The agent re-registers on startup and gets a fresh token automatically. If the controller requires an `agent_secret`, existing agents (with a valid token) bypass the secret check on re-registration — no action needed.
+
+### Forward proxy not routing via VPS
+```bash
+# Check forward proxy is listening
+ss -tnlp | grep 8080
+
+# Test the chain directly
+curl -x http://localhost:8080 https://ifconfig.me
+# Should return VPS IP, not local IP
+
+# Check upstream proxy was synced
+journalctl -u nekoproxy-agent | grep upstream
+```
+
+### Cert errors / SSL verification failures
+If agents can't connect to the controller due to cert errors:
+1. The controller's cert may not include the WireGuard IP in its SANs (e.g. WireGuard was set up after first install). Restart the controller — it will detect the missing IP and auto-regenerate the cert.
+2. Then go to **Settings → Push cert refresh to all agents** so agents re-TOFU the new cert.
+
+### Cert errors after controller reinstall
+From the controller web UI: **Settings → Push cert refresh to all agents**. Agents will automatically re-TOFU the new certificate.
+
+### Rules not applying
+1. Check agent is healthy (green) on the Agents page
+2. Check agent sync logs: `journalctl -u nekoproxy-agent | grep -i sync`
+3. Use the "Sync" button on the Agents page to force a push
+
+### DNS forwarder not responding
+```bash
+# Check it's listening (replace 5353 with your configured port)
+ss -ulnp | grep 5353
+ss -tlnp | grep 5353
+
+# Test a query directly
+dig @<agent-wireguard-ip> -p 5353 example.com
+
+# Check agent logs
+journalctl -u nekoproxy-agent | grep -i dns
+
+# Port 53 requires root — if using 53 and it won't bind, check the agent is running as root
+journalctl -u nekoproxy-agent | grep "Permission denied"
+```
+
+### Firewall issues (Linux)
+```bash
+iptables -L NEKOPROXY -n
+iptables -L NEKOPROXY_BLOCKLIST -n
+# Verify interface names match what the agent detected
+journalctl -u nekoproxy-agent | grep interface
+```
 
 ## Development
 
@@ -293,8 +564,8 @@ pip install -r requirements.txt
 # Controller
 python -m uvicorn controller.main:app --reload --port 8001
 
-# Agent
-NEKO_AGENT_CONTROLLER_URL=http://localhost:8001 NEKO_AGENT_WIREGUARD_IP=10.0.0.2 python -m agent.main
+# Agent (internal — no WireGuard)
+NEKO_AGENT_CONTROLLER_URL=http://localhost:8001 python -m agent.main
 ```
 
 ### Project Structure
@@ -302,17 +573,35 @@ NEKO_AGENT_CONTROLLER_URL=http://localhost:8001 NEKO_AGENT_WIREGUARD_IP=10.0.0.2
 ```
 nekoproxy/
 ├── agent/
+│   ├── core/
+│   │   ├── tcp_proxy.py          # TCP reverse proxy (upstream proxy support)
+│   │   ├── udp_proxy.py          # UDP reverse proxy
+│   │   ├── forward_proxy.py      # HTTP(S) forward proxy server
+│   │   ├── dns_forwarder.py      # DNS forwarder (UDP+TCP relay to upstream)
+│   │   ├── heartbeat.py          # Controller heartbeat
+│   │   ├── config_sync.py        # Config sync from controller
+│   │   ├── control_api.py        # ControlAPI (receives push commands)
+│   │   ├── cert_utils.py         # TLS cert helpers (TOFU, re-TOFU)
+│   │   ├── firewall.py           # iptables management (Linux)
+│   │   └── firewall_windows.py   # Windows Firewall management
+│   ├── config.py
+│   └── main.py
 ├── controller/
+│   ├── api/v1/                   # REST API
+│   ├── core/
+│   │   ├── agent_manager.py      # Agent config + route-via computation
+│   │   ├── agent_sync.py         # Push sync/cert refresh to agents
+│   │   └── live_events.py        # In-memory SSE event bus (live traffic view)
+│   ├── database/
+│   └── web/                      # Jinja2 + HTMX web UI
 ├── shared/
+│   ├── models/                   # Pydantic models (AgentConfig, etc.)
+│   └── tls.py                    # TLS cert generation
 ├── build/
 ├── build-docker.sh
-├── build-docker-alpine.sh   # Alpine (musl) Linux build
+├── build-docker-alpine.sh
 ├── install-agent.sh
 ├── install-controller.sh
-├── dist/windows/install-controller.ps1  # Windows: register controller as service
-├── dist/windows/install-agent.ps1      # Windows: register agent as service
-├── update-agent.sh
-├── update-controller.sh
 └── requirements.txt
 ```
 
@@ -325,27 +614,3 @@ sudo systemctl restart nekoproxy-controller
 sudo systemctl status nekoproxy-agent
 sudo systemctl restart nekoproxy-agent
 ```
-
-## Security Considerations
-
-- All communication over WireGuard
-- Agent API bound only to WireGuard interface
-- Dedicated iptables chain (`NEKOPROXY`)
-- Controller should not be public-facing
-
-## Troubleshooting
-
-### Agent not connecting
-1. `wg show`
-2. Check `/etc/nekoproxy/agent.env`
-3. `journalctl -u nekoproxy-agent -f`
-
-### Rules not applying
-1. Apply changes in UI
-2. Check agent sync logs
-3. Verify agent health
-
-### Firewall issues
-1. `iptables -L NEKOPROXY -n`
-2. Verify interface names
-3. Ensure agent runs as root

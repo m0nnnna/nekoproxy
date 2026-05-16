@@ -51,7 +51,8 @@ class ControlAPI:
         self,
         trigger_sync: Callable[[], asyncio.Future],
         deploy_email: Optional[Callable[[str, str, int, str], asyncio.Future]] = None,
-        trigger_email_sync: Optional[Callable[[], asyncio.Future]] = None
+        trigger_email_sync: Optional[Callable[[], asyncio.Future]] = None,
+        on_regen_cert: Optional[Callable[[], asyncio.Future]] = None,
     ):
         """
         Initialize control API.
@@ -64,6 +65,7 @@ class ControlAPI:
         self.trigger_sync = trigger_sync
         self.deploy_email = deploy_email
         self.trigger_email_sync = trigger_email_sync
+        self.on_regen_cert = on_regen_cert
         self._app = None
         self._runner = None
         self._site = None
@@ -79,6 +81,7 @@ class ControlAPI:
             self._app.router.add_post("/trigger-sync", self._handle_trigger_sync)
             self._app.router.add_get("/health", self._handle_health)
             self._app.router.add_post("/update-binary", self._handle_update_binary)
+            self._app.router.add_post("/regen-cert", self._handle_regen_cert)
 
             # Email proxy endpoints
             self._app.router.add_post("/deploy-email", self._handle_deploy_email)
@@ -234,6 +237,27 @@ class ControlAPI:
 
         logger.info("Update binary saved; restart scheduled")
         return web.json_response({"status": "ok", "message": "Update received; agent will restart shortly"})
+
+    async def _handle_regen_cert(self, request: web.Request) -> web.Response:
+        """Clear cached controller cert and re-download via TOFU.
+
+        Fixes agents stuck with a stale controller cert after the controller
+        was re-installed or its cert was regenerated — no agent rebuild needed.
+        """
+        if not _check_controller_token(request):
+            return _token_error()
+        logger.info("Received cert regen request from controller")
+        try:
+            from agent.core.cert_utils import clear_and_retofu
+            new_cert = await clear_and_retofu()
+            if self.on_regen_cert:
+                await self.on_regen_cert()
+            if new_cert:
+                return web.json_response({"status": "ok", "message": "Cert cache cleared and re-TOFU complete", "cert": new_cert})
+            return web.json_response({"status": "ok", "message": "Cert cache cleared; re-TOFU will happen on next sync"})
+        except Exception as e:
+            logger.error("Error in cert regen: %s", e)
+            return web.json_response({"status": "error", "message": str(e)}, status=500)
 
     async def _handle_deploy_email(self, request: web.Request) -> web.Response:
         """Handle email proxy deployment request from controller."""

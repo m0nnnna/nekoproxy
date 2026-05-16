@@ -18,10 +18,12 @@ class HeartbeatSender:
     def __init__(
         self,
         agent_id: int,
-        get_active_connections: Callable[[], int]
+        get_active_connections: Callable[[], int],
+        on_auth_failed: Optional[Callable[[], asyncio.Future]] = None,
     ):
         self.agent_id = agent_id
         self.get_active_connections = get_active_connections
+        self._on_auth_failed = on_auth_failed
         self._running = False
         self._task: Optional[asyncio.Task] = None
         self._client: Optional[httpx.AsyncClient] = None
@@ -35,6 +37,12 @@ class HeartbeatSender:
     def _ssl_verify(self):
         """Return SSL verification setting for controller connection."""
         return getattr(settings, "controller_ssl_ca_cert", None) or getattr(settings, "controller_ssl_verify", False)
+
+    async def _rebuild_client(self):
+        """Close and recreate the httpx client with the current SSL settings."""
+        if self._client:
+            await self._client.aclose()
+        self._client = httpx.AsyncClient(timeout=10.0, verify=self._ssl_verify())
 
     async def start(self):
         """Start the heartbeat loop."""
@@ -88,9 +96,18 @@ class HeartbeatSender:
             response.raise_for_status()
             logger.debug(f"Heartbeat sent: {active_connections} connections")
         except httpx.HTTPStatusError as e:
-            if e.response.status_code == 404:
+            if e.response.status_code == 401:
+                logger.warning("Heartbeat rejected with 401 — token stale, re-registering")
+                if self._on_auth_failed:
+                    await self._on_auth_failed()
+            elif e.response.status_code == 404:
                 logger.error("Agent not found - may need to re-register")
             raise
         except httpx.RequestError as e:
+            from agent.core.cert_utils import is_ssl_error, clear_and_retofu
+            if is_ssl_error(e) and settings.controller_ssl_ca_cert:
+                logger.warning("SSL cert mismatch on heartbeat — clearing cached cert and re-doing TOFU")
+                await clear_and_retofu()
+                await self._rebuild_client()
             logger.warning(f"Controller unreachable: {e}")
             raise

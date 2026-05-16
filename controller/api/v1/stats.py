@@ -7,6 +7,7 @@ from datetime import datetime
 from controller.database.database import get_db
 from controller.database.repositories import ConnectionStatRepository, EmailStatRepository, FirewallStatRepository
 from controller.core.auth import require_api_token, require_agent_token
+from controller.core.live_events import live_events
 from shared.models import StatsReport
 
 router = APIRouter()
@@ -127,9 +128,28 @@ def report_connections(report: StatsReport, db: Session = Depends(get_db), _auth
     """Receive connection statistics from an agent."""
     repo = ConnectionStatRepository(db)
 
+    # Pre-load agent name and service names for live event labelling
+    agent_name = str(report.agent_id)
+    try:
+        from controller.database.models import Agent as _Agent
+        _agent = db.query(_Agent).filter(_Agent.id == report.agent_id).first()
+        if _agent:
+            agent_name = _agent.hostname
+    except Exception:
+        pass
+
+    service_ids = {c.service_id for c in report.connections if c.service_id}
+    service_names: dict = {}
+    if service_ids:
+        try:
+            from controller.database.models import Service as _Service
+            for svc in db.query(_Service).filter(_Service.id.in_(service_ids)).all():
+                service_names[svc.id] = svc.name
+        except Exception:
+            pass
+
     stats_data = []
     for conn in report.connections:
-        # Ensure timestamp is a datetime object
         timestamp = conn.timestamp
         if isinstance(timestamp, str):
             try:
@@ -137,18 +157,37 @@ def report_connections(report: StatsReport, db: Session = Depends(get_db), _auth
             except (ValueError, TypeError):
                 timestamp = datetime.utcnow()
 
-        stats_data.append({
+        proxy_type = getattr(conn, "proxy_type", "incoming") or "incoming"
+        target = getattr(conn, "target", None)
+
+        # Push every connection type to the live event bus
+        live_events.push(proxy_type, {
+            "time": timestamp.strftime("%H:%M:%S"),
+            "agent": agent_name,
             "agent_id": report.agent_id,
-            "service_id": conn.service_id,
             "client_ip": conn.client_ip,
+            "service": service_names.get(conn.service_id) if conn.service_id else None,
             "status": conn.status,
-            "duration": conn.duration,
+            "duration": round(conn.duration, 2) if conn.duration is not None else None,
             "bytes_sent": conn.bytes_sent,
             "bytes_received": conn.bytes_received,
-            "timestamp": timestamp
+            "target": target,
         })
 
-    count = repo.add_batch(stats_data)
+        # Only persist incoming (TCP/UDP service) connections to DB
+        if proxy_type == "incoming":
+            stats_data.append({
+                "agent_id": report.agent_id,
+                "service_id": conn.service_id,
+                "client_ip": conn.client_ip,
+                "status": conn.status,
+                "duration": conn.duration,
+                "bytes_sent": conn.bytes_sent,
+                "bytes_received": conn.bytes_received,
+                "timestamp": timestamp
+            })
+
+    count = repo.add_batch(stats_data) if stats_data else 0
     return {"status": "accepted", "count": count}
 
 
@@ -213,9 +252,17 @@ def report_email_stats(report: EmailStatsReport, db: Session = Depends(get_db), 
     """Receive email statistics from an agent."""
     repo = EmailStatRepository(db)
 
+    agent_name = str(report.agent_id)
+    try:
+        from controller.database.models import Agent as _Agent
+        _agent = db.query(_Agent).filter(_Agent.id == report.agent_id).first()
+        if _agent:
+            agent_name = _agent.hostname
+    except Exception:
+        pass
+
     stats_data = []
     for email in report.emails:
-        # Parse timestamp from ISO string to datetime
         timestamp = email.get("timestamp")
         if isinstance(timestamp, str):
             try:
@@ -224,6 +271,17 @@ def report_email_stats(report: EmailStatsReport, db: Session = Depends(get_db), 
                 timestamp = datetime.utcnow()
         elif timestamp is None:
             timestamp = datetime.utcnow()
+
+        live_events.push("email", {
+            "time": timestamp.strftime("%H:%M:%S"),
+            "agent": agent_name,
+            "agent_id": report.agent_id,
+            "client_ip": email.get("client_ip", "unknown"),
+            "sender": email.get("sender") or "",
+            "recipient": email.get("recipient") or "",
+            "status": email.get("status", "unknown"),
+            "bytes": email.get("bytes_sent", 0),
+        })
 
         stats_data.append({
             "agent_id": report.agent_id,

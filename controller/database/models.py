@@ -22,6 +22,7 @@ class Agent(Base):
     memory_percent = Column(Float, default=0.0)
     version = Column(String(20), default="2.0.0")
     internal = Column(Boolean, default=False)  # Internal agent: looser port control (dangerous ports allowed)
+    route_via_agent_id = Column(Integer, ForeignKey("agents.id"), nullable=True)  # Route outbound through this agent's forward proxy
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -264,6 +265,10 @@ class GlobalSettings(Base):
     agent_secret = Column(String(255), nullable=True)  # optional; agents must send this to register
     api_token = Column(String(64), nullable=True)  # admin API token (auto-generated on first run)
     controller_token = Column(String(64), nullable=True)  # token controller sends to agents' ControlAPI
+    forward_proxy_port = Column(Integer, nullable=True)  # 0 or NULL = disabled; agents listen on this port
+    forward_proxy_auth = Column(String(255), nullable=True)  # optional "user:pass" for Proxy-Authorization
+    dns_port = Column(Integer, nullable=True)  # 0 or NULL = disabled; DNS forwarder listen port
+    dns_upstream = Column(String(255), nullable=True)  # upstream resolver e.g. "1.1.1.1:53"
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 

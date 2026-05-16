@@ -5,13 +5,15 @@ from pydantic import BaseModel
 
 class ConnectionStats(BaseModel):
     """Single connection statistics."""
-    service_id: Optional[int] = None  # None for firewall-blocked connections
+    service_id: Optional[int] = None
     client_ip: str
-    status: str  # "connected", "disconnected", "blocked"
-    duration: Optional[float] = None  # seconds
+    status: str
+    duration: Optional[float] = None
     bytes_sent: int = 0
     bytes_received: int = 0
     timestamp: datetime
+    proxy_type: str = "incoming"   # "incoming" | "dns" | "forward"
+    target: Optional[str] = None   # forward proxy destination (host:port)
 
 
 class StatsReport(BaseModel):

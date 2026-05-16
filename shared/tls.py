@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 
 
 def _detect_local_ips() -> List[str]:
-    """Return all local IPv4 addresses detected on this machine."""
+    """Return all local IPv4 addresses, including WireGuard and other virtual interfaces."""
     ips: set = {"127.0.0.1"}
     # Primary outbound interface IP (doesn't send any traffic)
     try:
@@ -41,6 +41,15 @@ def _detect_local_ips() -> List[str]:
             addr = info[4][0]
             if addr:
                 ips.add(addr)
+    except Exception:
+        pass
+    # All interface IPs via psutil (catches WireGuard, VPN, and other virtual interfaces)
+    try:
+        import psutil
+        for _iface, addrs in psutil.net_if_addrs().items():
+            for addr in addrs:
+                if addr.family == socket.AF_INET and addr.address:
+                    ips.add(addr.address)
     except Exception:
         pass
     return list(ips)
@@ -65,7 +74,8 @@ def ensure_cert(
     extra_hostnames: Optional[List[str]] = None,
 ) -> Tuple[bool, str]:
     """
-    Generate a self-signed TLS certificate if one doesn't already exist.
+    Generate a self-signed TLS certificate if one doesn't already exist,
+    or regenerate it if the existing cert's SANs are missing any current IPs.
 
     The certificate includes all detected local IPs plus any extra IPs/hostnames
     as Subject Alternative Names so it works with raw IP addresses.
@@ -81,8 +91,30 @@ def ensure_cert(
           generated   — True if a new cert was created, False if it already existed.
           fingerprint — SHA-256 fingerprint of the cert (new or existing).
     """
+    # ── SANs ──────────────────────────────────────────────────────────────────
+    all_ips = list({ip for ip in (_detect_local_ips() + (extra_ips or [])) if ip})
+    hostname = socket.gethostname()
+    all_hostnames = list({"localhost", hostname} | {h for h in (extra_hostnames or []) if h})
+
     if cert_path.is_file() and key_path.is_file():
-        return False, cert_fingerprint(cert_path)
+        # Regenerate if the existing cert is missing any currently-needed IP SANs
+        # (e.g. WireGuard IP was added after the cert was first generated).
+        try:
+            from cryptography import x509
+            cert = x509.load_pem_x509_certificate(cert_path.read_bytes())
+            try:
+                san_ext = cert.extensions.get_extension_for_class(x509.SubjectAlternativeName)
+                existing_ips = {str(ip) for ip in san_ext.value.get_values_for_type(x509.IPAddress)}
+            except Exception:
+                existing_ips = set()
+            missing = {ip for ip in all_ips} - existing_ips
+            if not missing:
+                return False, cert_fingerprint(cert_path)
+            logger.info("Regenerating TLS cert: SANs missing IPs %s", missing)
+            cert_path.unlink(missing_ok=True)
+            key_path.unlink(missing_ok=True)
+        except ImportError:
+            return False, cert_fingerprint(cert_path)
 
     try:
         from cryptography import x509
@@ -95,11 +127,6 @@ def ensure_cert(
             "Run: pip install cryptography"
         )
         return False, ""
-
-    # ── SANs ──────────────────────────────────────────────────────────────────
-    all_ips = list({ip for ip in (_detect_local_ips() + (extra_ips or [])) if ip})
-    hostname = socket.gethostname()
-    all_hostnames = list({"localhost", hostname} | {h for h in (extra_hostnames or []) if h})
 
     san_entries = []
     for ip in all_ips:

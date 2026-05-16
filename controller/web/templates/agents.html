@@ -34,6 +34,7 @@
                     <th class="text-left">Public IP</th>
                     <th class="text-left">Status</th>
                     <th class="text-left">Internal</th>
+                    <th class="text-left">Route via</th>
                     <th class="text-left">Connections</th>
                     <th class="text-left">Last Heartbeat</th>
                     <th class="text-left">Actions</th>
@@ -61,6 +62,17 @@
                                    hx-post="/agents/{{ agent.id }}/internal" hx-trigger="change" hx-swap="outerHTML" hx-target="closest label"
                                    {% if agent.internal %}checked{% endif %}> Internal
                         </label>
+                    </td>
+                    <td class="whitespace-nowrap text-sm">
+                        <select name="route_via_agent_id"
+                                hx-post="/agents/{{ agent.id }}/route-via"
+                                hx-trigger="change" hx-swap="outerHTML" hx-target="this"
+                                class="neko-input text-sm py-0.5 px-1 min-w-[8rem]">
+                            <option value="">— direct —</option>
+                            {% for other in agents %}{% if other.id != agent.id %}
+                            <option value="{{ other.id }}" {% if agent.route_via_agent_id == other.id %}selected{% endif %}>{{ other.hostname }}</option>
+                            {% endif %}{% endfor %}
+                        </select>
                     </td>
                     <td class="whitespace-nowrap text-sm text-neko-500">{{ agent.active_connections }}</td>
                     <td class="whitespace-nowrap text-sm text-neko-400">
@@ -90,7 +102,7 @@
                 </tr>
                 {% else %}
                 <tr>
-                    <td colspan="9" class="text-center py-8 neko-empty">
+                    <td colspan="10" class="text-center py-8 neko-empty">
                         No agents registered yet (=^.^=) Start an agent to see it here!
                     </td>
                 </tr>
