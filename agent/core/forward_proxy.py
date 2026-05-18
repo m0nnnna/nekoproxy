@@ -48,7 +48,7 @@ async def _open_backend(host: str, port: int, upstream_proxy: Optional[str]):
             return await asyncio.open_connection(sock=sock)
         except ImportError:
             raise RuntimeError("python-socks required for upstream proxy; run: pip install python-socks[asyncio]")
-    return await asyncio.wait_for(asyncio.open_connection(host, port), timeout=15)
+    return await asyncio.wait_for(asyncio.open_connection(host, port, limit=256 * 1024), timeout=15)
 
 
 async def _relay(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> int:
@@ -214,13 +214,23 @@ class ForwardProxyServer:
         writer.write(_CONNECT_ESTABLISHED)
         await writer.drain()
 
-        results = await asyncio.gather(
-            _relay(reader, remote_writer),
-            _relay(remote_reader, writer),
-            return_exceptions=True,
-        )
-        bytes_up = results[0] if isinstance(results[0], int) else 0
-        bytes_down = results[1] if isinstance(results[1], int) else 0
+        t1 = asyncio.create_task(_relay(reader, remote_writer))
+        t2 = asyncio.create_task(_relay(remote_reader, writer))
+        done, pending = await asyncio.wait([t1, t2], return_when=asyncio.FIRST_COMPLETED)
+        for task in pending:
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+
+        def _task_bytes(t: asyncio.Task) -> int:
+            if t.done() and not t.cancelled() and t.exception() is None:
+                return t.result()
+            return 0
+
+        bytes_up = _task_bytes(t1)
+        bytes_down = _task_bytes(t2)
         try:
             remote_writer.close()
             await remote_writer.wait_closed()
