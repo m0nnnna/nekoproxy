@@ -14,11 +14,29 @@ Supports:
 import asyncio
 import base64
 import logging
+import socket
 import time
 import types
 from typing import Optional, Callable
 
 logger = logging.getLogger(__name__)
+
+# Hostname → (address-list, expiry) cache so burst media loads don't each pay
+# a getaddrinfo round-trip for the same CDN hostname.
+_dns_cache: dict = {}
+
+async def _resolve(host: str) -> list:
+    loop = asyncio.get_running_loop()
+    now = loop.time()
+    entry = _dns_cache.get(host)
+    if entry and now < entry[1]:
+        return entry[0]
+    infos = await loop.getaddrinfo(host, None, type=socket.SOCK_STREAM)
+    addrs = [i[4][0] for i in infos if i[4][0]]
+    if addrs:
+        _dns_cache[host] = (addrs, now + 60.0)
+    return addrs
+
 
 _CONNECT_ESTABLISHED = b"HTTP/1.1 200 Connection established\r\n\r\n"
 _BAD_GATEWAY = b"HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\n\r\n"
@@ -45,10 +63,19 @@ async def _open_backend(host: str, port: int, upstream_proxy: Optional[str]):
             sock = await asyncio.wait_for(
                 proxy.connect(dest_host=host, dest_port=port), timeout=15
             )
-            return await asyncio.open_connection(sock=sock)
+            return await asyncio.open_connection(sock=sock, limit=256 * 1024)
         except ImportError:
             raise RuntimeError("python-socks required for upstream proxy; run: pip install python-socks[asyncio]")
-    return await asyncio.wait_for(asyncio.open_connection(host, port, limit=256 * 1024), timeout=15)
+    # Pre-resolve with cache, then connect directly to IP so the OS DNS thread
+    # pool isn't hit for every parallel media request to the same CDN hostname.
+    # happy_eyeballs_delay lets IPv4 race IPv6 after 250 ms so a broken/slow
+    # IPv6 route on the agent doesn't stall media loads from dual-stack CDNs.
+    addrs = await _resolve(host)
+    target = addrs[0] if addrs else host
+    return await asyncio.wait_for(
+        asyncio.open_connection(target, port, limit=256 * 1024, happy_eyeballs_delay=0.25),
+        timeout=15,
+    )
 
 
 async def _relay(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> int:
@@ -105,7 +132,8 @@ class ForwardProxyServer:
 
     async def start(self):
         self._server = await asyncio.start_server(
-            self._handle_client, self._listen_ip, self._port, reuse_address=True
+            self._handle_client, self._listen_ip, self._port,
+            reuse_address=True, backlog=256,
         )
         addr = self._server.sockets[0].getsockname()
         auth_note = " (auth required)" if self._auth else ""
