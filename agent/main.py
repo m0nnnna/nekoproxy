@@ -283,19 +283,30 @@ class NekoProxyAgent:
         """Start, stop, or restart the forward proxy based on the controller config."""
         current_port = self._forward_proxy._port if self._forward_proxy else 0
         current_auth = self._forward_proxy._auth if self._forward_proxy else None
+        current_upstream = self._forward_proxy._upstream if self._forward_proxy else None
         # Normalize auth for comparison
         new_auth_tuple = None
         if auth and ":" in auth:
             u, p = auth.split(":", 1)
             new_auth_tuple = (u.strip(), p.strip())
 
+        # The upstream/exit (route-via) is captured at construction and used for
+        # every backend connection. If the controller changes it but port/auth
+        # stay the same, we MUST still restart — otherwise the running proxy keeps
+        # dialing the old exit (or direct), so an internal agent with no direct
+        # egress listens but forwards nothing.
+        new_upstream = getattr(settings, "upstream_proxy", None)
+        upstream_changed = new_upstream != current_upstream
+
         # Also restart if the task silently died (bind error, etc.)
         task_dead = self._forward_proxy_task is not None and self._forward_proxy_task.done()
         if task_dead and self._forward_proxy_task.exception() is not None:
             logger.warning("Forward proxy task had crashed (%s) — restarting", self._forward_proxy_task.exception())
 
-        if port == current_port and new_auth_tuple == current_auth and not task_dead:
+        if port == current_port and new_auth_tuple == current_auth and not upstream_changed and not task_dead:
             return  # No change
+        if upstream_changed and self._forward_proxy:
+            logger.info("Forward proxy upstream changed (%s → %s) — restarting", current_upstream, new_upstream)
 
         # Stop existing forward proxy if running
         if self._forward_proxy:
