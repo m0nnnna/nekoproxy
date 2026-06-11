@@ -18,6 +18,22 @@ def _agent_config_dir() -> Path:
     return Path.cwd()
 
 
+def _agent_env_files() -> list:
+    """Candidate env files, lowest precedence first (later entries win).
+
+    The Linux installer (install-agent.sh) writes config to /etc/nekoproxy/agent.env
+    and points systemd's EnvironmentFile at it — but the loader historically only
+    looked in cwd and the exe dir (/opt/nekoproxy). The two disagreed, so running
+    the binary outside systemd (or any time EnvironmentFile wasn't applied) silently
+    fell back to the localhost:8001 default instead of reusing the real controller
+    URL. Include the canonical /etc path so there's one consistent source of truth.
+    """
+    files = [".env", str(_agent_config_dir() / "agent.env"), str(_agent_config_dir() / ".env")]
+    if sys.platform != "win32":
+        files.append("/etc/nekoproxy/agent.env")
+    return files
+
+
 class AgentSettings(BaseSettings):
     # Agent identification
     hostname: str = get_hostname()
@@ -67,6 +83,26 @@ class AgentSettings(BaseSettings):
     # Optional Basic auth for the forward proxy: "username:password"
     # NEKO_AGENT_FORWARD_PROXY_AUTH=myuser:mypassword
     forward_proxy_auth: Optional[str] = None
+    # Max concurrent forward-proxy connections (hard ceiling on open sockets/FDs).
+    # Federating servers (Misskey/Matrix) burst hundreds of outbound connections;
+    # without a cap the agent exhausts file descriptors and crashes. Over-capacity
+    # connections wait briefly then get a fast 503 instead of dragging the process
+    # down. Default 500 is sized for a 1 vCPU / 1 GB VPS (~125 MB worst case);
+    # raise it on bigger hosts (≈1000 per 2 GB, ≈3000 per 4 GB+).
+    forward_proxy_max_connections: int = 500
+    # Idle timeout (seconds) for an established tunnel/relay. A connection with no
+    # data in either direction for this long is reaped. Replaces the old absolute
+    # lifetime cap that killed active long media transfers and Matrix keepalives.
+    forward_proxy_idle_timeout: int = 180
+    # How long (seconds) a new connection waits for a free slot when the proxy is
+    # at capacity before being shed with 503. A short queue absorbs bursts so most
+    # connections are still served; past it, shedding protects a small VPS.
+    forward_proxy_overflow_wait: int = 5
+    # Max concurrent connections to any single destination host (0 = unlimited).
+    # Stops one slow/dead federated server from holding a large share of the pool
+    # (idle tunnels linger up to forward_proxy_idle_timeout), starving healthy
+    # traffic. ~6% of the global cap is a sane share.
+    forward_proxy_max_per_host: int = 32
 
     # Upstream proxy: route all backend connections through this proxy (exit from VPS, not local IP).
     # Format: socks5://host:port, socks4://host:port, or http://host:port
@@ -127,8 +163,10 @@ class AgentSettings(BaseSettings):
 
     class Config:
         env_prefix = "NEKO_AGENT_"
-        # Load .env from cwd first, then agent.env / .env from exe dir (Windows) so exe-dir overrides
-        env_file = [".env", str(_agent_config_dir() / "agent.env"), str(_agent_config_dir() / ".env")]
+        # cwd .env first, then exe-dir agent.env/.env, then the canonical
+        # /etc/nekoproxy/agent.env on Linux (later entries win). systemd-injected
+        # NEKO_AGENT_* env vars still override all of these.
+        env_file = _agent_env_files()
 
     @model_validator(mode="after")
     def _load_token_and_paranoid(self):

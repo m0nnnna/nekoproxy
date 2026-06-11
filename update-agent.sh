@@ -95,6 +95,24 @@ print_success "Installing new binary"
 cp -f "$NEW_BINARY" "$CURRENT_BINARY"
 chmod +x "$CURRENT_BINARY"
 
+# Config sanity check: the update preserves config but can't recreate it. If the
+# systemd EnvironmentFile is missing or has no controller URL, the agent will
+# silently fall back to http://localhost:8001 and fail to register. Warn loudly
+# instead of leaving the operator to debug a "failed to start" with no clue.
+if use_systemd; then
+    ENV_FILE=$(systemctl show -p EnvironmentFiles --value "$SERVICE_NAME" 2>/dev/null | sed 's/ (ignore_errors=.*//')
+    [[ -z "$ENV_FILE" ]] && ENV_FILE="/etc/nekoproxy/agent.env"
+    if [[ ! -f "$ENV_FILE" ]]; then
+        print_warning "Config file not found: $ENV_FILE"
+        print_warning "The agent will fall back to defaults (controller http://localhost:8001) and likely fail to register."
+        print_warning "Recreate it (re-run install-agent.sh) or restore it before the agent can connect."
+    elif ! grep -q "NEKO_AGENT_CONTROLLER_URL" "$ENV_FILE" 2>/dev/null; then
+        print_warning "$ENV_FILE has no NEKO_AGENT_CONTROLLER_URL — agent will default to http://localhost:8001."
+    else
+        print_success "Config OK: $(grep NEKO_AGENT_CONTROLLER_URL "$ENV_FILE" | head -1)"
+    fi
+fi
+
 # Start service
 echo "Starting agent..."
 if use_systemd; then

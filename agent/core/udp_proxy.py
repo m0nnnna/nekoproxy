@@ -297,7 +297,8 @@ class UDPProxy:
                 geo_countries=self.geo_countries,
                 geo_lookup=self.geo_lookup,
             ),
-            local_addr=(self._listen_ip, self.listen_port)
+            local_addr=(self._listen_ip, self.listen_port),
+            reuse_address=True,
         )
 
     async def stop(self):
@@ -388,7 +389,14 @@ class UDPProxyManager:
             client_timeout=client_timeout,
         )
 
-        await proxy.start()
+        try:
+            await proxy.start()
+        except OSError as e:
+            logger.error(
+                "UDP proxy on port %d failed to bind: %s — skipping this port",
+                listen_port, e,
+            )
+            return
         self._proxies[listen_port] = proxy
 
     async def remove_proxy(self, listen_port: int):

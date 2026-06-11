@@ -162,6 +162,12 @@ class NekoProxyAgent:
 
     async def _on_config_update(self, config: AgentConfig):
         """Handle configuration updates from controller."""
+        try:
+            await self._apply_config(config)
+        except Exception as e:
+            logger.error("Config update failed at version %s: %s", config.config_version, e, exc_info=True)
+
+    async def _apply_config(self, config: AgentConfig):
         logger.info(f"Applying config version {config.config_version}")
 
         # Controller is source of truth for blocklist (includes any IPs we reported via /report)
@@ -277,20 +283,24 @@ class NekoProxyAgent:
         """Start, stop, or restart the forward proxy based on the controller config."""
         current_port = self._forward_proxy._port if self._forward_proxy else 0
         current_auth = self._forward_proxy._auth if self._forward_proxy else None
-
         # Normalize auth for comparison
         new_auth_tuple = None
         if auth and ":" in auth:
             u, p = auth.split(":", 1)
             new_auth_tuple = (u.strip(), p.strip())
 
-        if port == current_port and new_auth_tuple == current_auth:
+        # Also restart if the task silently died (bind error, etc.)
+        task_dead = self._forward_proxy_task is not None and self._forward_proxy_task.done()
+        if task_dead and self._forward_proxy_task.exception() is not None:
+            logger.warning("Forward proxy task had crashed (%s) — restarting", self._forward_proxy_task.exception())
+
+        if port == current_port and new_auth_tuple == current_auth and not task_dead:
             return  # No change
 
         # Stop existing forward proxy if running
         if self._forward_proxy:
             await self._forward_proxy.stop()
-            if self._forward_proxy_task:
+            if self._forward_proxy_task and not self._forward_proxy_task.done():
                 self._forward_proxy_task.cancel()
                 try:
                     await self._forward_proxy_task
@@ -310,21 +320,41 @@ class NekoProxyAgent:
                 upstream_proxy=getattr(settings, "upstream_proxy", None),
                 auth=auth,
                 on_connection=self._on_connection,
+                max_connections=getattr(settings, "forward_proxy_max_connections", 500),
+                idle_timeout=getattr(settings, "forward_proxy_idle_timeout", 180),
+                overflow_wait=getattr(settings, "forward_proxy_overflow_wait", 5),
+                max_per_host=getattr(settings, "forward_proxy_max_per_host", 32),
             )
-            self._forward_proxy_task = asyncio.create_task(self._forward_proxy.start())
-            logger.info("Forward proxy started on %s:%d (from controller config)", listen_ip, port)
+            self._forward_proxy_task = asyncio.create_task(self._run_forward_proxy(listen_ip, port))
+
+    async def _run_forward_proxy(self, listen_ip: str, port: int):
+        """Run the forward proxy server and log any startup/runtime errors."""
+        try:
+            await self._forward_proxy.start()
+        except OSError as e:
+            logger.error(
+                "Forward proxy failed to bind on %s:%d — %s  "
+                "(check that the WireGuard interface is up and the IP is assigned)",
+                listen_ip, port, e,
+            )
+        except Exception as e:
+            logger.error("Forward proxy on %s:%d crashed: %s", listen_ip, port, e)
 
     async def _apply_dns_config(self, port: int, upstream: str):
         """Start, stop, or restart the DNS forwarder based on the controller config."""
         current_port = self._dns_forwarder._port if self._dns_forwarder else 0
         current_upstream = self._dns_forwarder._upstream if self._dns_forwarder else None
 
-        if port == current_port and upstream == current_upstream:
+        task_dead = self._dns_forwarder_task is not None and self._dns_forwarder_task.done()
+        if task_dead and self._dns_forwarder_task.exception() is not None:
+            logger.warning("DNS forwarder task had crashed (%s) — restarting", self._dns_forwarder_task.exception())
+
+        if port == current_port and upstream == current_upstream and not task_dead:
             return
 
         if self._dns_forwarder:
             await self._dns_forwarder.stop()
-            if self._dns_forwarder_task:
+            if self._dns_forwarder_task and not self._dns_forwarder_task.done():
                 self._dns_forwarder_task.cancel()
                 try:
                     await self._dns_forwarder_task
@@ -344,8 +374,20 @@ class NekoProxyAgent:
                 upstream=upstream,
                 on_connection=self._on_connection,
             )
-            self._dns_forwarder_task = asyncio.create_task(self._dns_forwarder.start())
-            logger.info("DNS forwarder started on %s:%d → %s (from controller config)", listen_ip, port, upstream)
+            self._dns_forwarder_task = asyncio.create_task(self._run_dns_forwarder(listen_ip, port, upstream))
+
+    async def _run_dns_forwarder(self, listen_ip: str, port: int, upstream: str):
+        """Run the DNS forwarder and log any startup/runtime errors."""
+        try:
+            await self._dns_forwarder.start()
+        except OSError as e:
+            logger.error(
+                "DNS forwarder failed to bind on %s:%d — %s  "
+                "(check that the WireGuard interface is up and the IP is assigned)",
+                listen_ip, port, e,
+            )
+        except Exception as e:
+            logger.error("DNS forwarder on %s:%d crashed: %s", listen_ip, port, e)
 
     async def _on_auth_failed(self):
         """Re-register with controller to refresh agent token after a 401 rejection."""
@@ -547,13 +589,49 @@ class NekoProxyAgent:
                 e,
             )
 
+    @staticmethod
+    def _raise_fd_limit():
+        """Raise the open-file-descriptor soft limit to the hard limit (Linux/Unix).
+
+        Each proxied connection uses 2 FDs (client + backend). Federating servers
+        (Misskey/Matrix) burst hundreds of outbound connections, and the default
+        soft limit (often 1024) is hit fast → 'Too many open files', which stalls
+        accept() and crashes the proxy. No-op on Windows (no resource module).
+        """
+        try:
+            import resource
+        except ImportError:
+            return  # Windows
+        try:
+            soft, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
+            if soft < hard:
+                resource.setrlimit(resource.RLIMIT_NOFILE, (hard, hard))
+                logger.info("Raised open-file limit: %s → %s", soft, hard)
+        except Exception as e:
+            logger.warning("Could not raise open-file (RLIMIT_NOFILE) limit: %s", e)
+
     async def start(self):
         """Start the NekoProxy agent."""
+        self._raise_fd_limit()
         logger.info("=" * 70)
         logger.info("NekoProxy Agent Starting")
         logger.info(f"  Hostname: {settings.hostname}")
         logger.info(f"  WireGuard IP: {settings.wireguard_ip or '(internal - none)'}")
         logger.info(f"  Controller: {settings.controller_url}")
+        # Surface which config file(s) actually exist so a "hidden" config (the
+        # installer writes /etc/nekoproxy/agent.env) is never a mystery again.
+        try:
+            from agent.config import _agent_env_files
+            from os.path import isfile
+            found = [f for f in _agent_env_files() if isfile(f)]
+            logger.info(f"  Config file(s): {', '.join(found) if found else '(none found — using env vars / defaults)'}")
+            if settings.controller_url == "http://localhost:8001" and not found:
+                logger.warning(
+                    "  Controller URL is the built-in default and no config file was found. "
+                    "If run by hand, note systemd loads /etc/nekoproxy/agent.env via EnvironmentFile."
+                )
+        except Exception:
+            pass
         logger.info("=" * 70)
 
         # Generate ControlAPI TLS cert BEFORE registering so the controller
@@ -627,6 +705,10 @@ class NekoProxyAgent:
                 upstream_proxy=getattr(settings, "upstream_proxy", None),
                 auth=getattr(settings, "forward_proxy_auth", None),
                 on_connection=self._on_connection,
+                max_connections=getattr(settings, "forward_proxy_max_connections", 500),
+                idle_timeout=getattr(settings, "forward_proxy_idle_timeout", 180),
+                overflow_wait=getattr(settings, "forward_proxy_overflow_wait", 5),
+                max_per_host=getattr(settings, "forward_proxy_max_per_host", 32),
             )
             self._forward_proxy_task = asyncio.create_task(self._forward_proxy.start())
 
