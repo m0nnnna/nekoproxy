@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func
 
 from controller.database.repositories import AgentRepository, ServiceAssignmentRepository, BlocklistRepository, FirewallRuleRepository, GlobalSettingsRepository
-from controller.database.models import Agent, FirewallRule, ServiceAssignment, Service, BlocklistEntry
+from controller.database.models import Agent, FirewallRule, ServiceAssignment, Service, BlocklistEntry, GlobalSettings
 from shared.models import AgentConfig, AgentRegistration, AgentHeartbeat, ServiceResponse, FirewallRuleResponse
 from shared.models.email import AgentEmailConfig
 from controller.config import settings
@@ -95,6 +95,12 @@ class AgentManager:
         # Get max added_at from blocklist
         blocklist_max = self.db.query(func.max(BlocklistEntry.added_at)).scalar()
 
+        # Include GlobalSettings so forward_proxy_port/dns_port/auth changes trigger re-config
+        gs_max = self.db.query(func.max(GlobalSettings.updated_at)).scalar()
+
+        # Include all Agent rows: parent IP or route_via_agent_id changes affect child configs
+        agent_max = self.db.query(func.max(Agent.updated_at)).scalar()
+
         # Get record counts to detect deletions
         firewall_count = self.db.query(func.count(FirewallRule.id)).filter(
             (FirewallRule.agent_id == agent_id) | (FirewallRule.agent_id == None)
@@ -107,7 +113,7 @@ class AgentManager:
         blocklist_count = self.db.query(func.count(BlocklistEntry.id)).scalar() or 0
 
         # Find the maximum timestamp across all sources
-        timestamps = [t for t in [firewall_max, assignment_max, service_max, blocklist_max] if t]
+        timestamps = [t for t in [firewall_max, assignment_max, service_max, blocklist_max, gs_max, agent_max] if t]
 
         if not timestamps:
             # No data, but include counts in case records exist with null timestamps
