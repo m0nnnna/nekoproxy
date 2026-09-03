@@ -123,7 +123,17 @@ class NekoProxyServiceFramework(win32serviceutil.ServiceFramework):
 
         self._run_thread = threading.Thread(target=_run, daemon=False)
         self._run_thread.start()
-        self._run_thread.join()
+
+        # Give an instant failure (bad config, port in use) ~3s to surface so we
+        # can report a clean start failure instead of a RUNNING->STOPPED flap.
+        self._run_thread.join(timeout=3)
+
+        # Tell the SCM we're up. WITHOUT this the service sticks in
+        # START_PENDING and `Start-Service` fails with error 1053 after ~30s.
+        if self._run_thread.is_alive():
+            self.ReportServiceStatus(win32service.SERVICE_RUNNING)
+            servicemanager.LogInfoMsg(f"{self._svc_name_}: running")
+            self._run_thread.join()
 
         if not self._stop_event.is_set():
             # The app exited on its own (crash, or gave up). Report a non-zero
