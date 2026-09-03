@@ -157,20 +157,22 @@ pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 _icon_file = project_root / 'build' / 'neko.ico'
 _icon = str(_icon_file) if _icon_file.is_file() else None
 
+# onedir, not onefile: a Windows service must answer the SCM within ~30s. A
+# onefile build spends that budget unpacking ~27MB to a temp dir and spawning a
+# second process (AV scanning the freshly written files makes it worse), so the
+# service start times out with error 1053. onedir has no unpack step - the
+# process the SCM launches IS the app.
 exe = EXE(
     pyz,
     a.scripts,
-    a.binaries,
-    a.zipfiles,
-    a.datas,
     [],
+    exclude_binaries=True,
     name='nekoproxy-controller',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
-    upx=False,  # UPX-compressed onefile exes can fail bootloader PKG load (PYI-8960) and trip AV
+    upx=False,
     upx_exclude=[],
-    runtime_tmpdir=None,
     console=True,
     disable_windowed_traceback=False,
     argv_emulation=False,
@@ -178,4 +180,15 @@ exe = EXE(
     codesign_identity=None,
     entitlements_file=None,
     icon=_icon,
+)
+
+coll = COLLECT(
+    exe,
+    a.binaries,
+    a.zipfiles,
+    a.datas,
+    strip=False,
+    upx=False,
+    upx_exclude=[],
+    name='nekoproxy-controller',
 )

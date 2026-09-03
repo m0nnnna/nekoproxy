@@ -34,14 +34,21 @@ param(
 $BinaryName  = "nekoproxy-agent.exe"
 $ServiceName = "nekoproxy-agent"
 
-# --- Locate the exe (script dir, then current dir) ---
+# --- Locate the exe ---
+# onedir layout: <root>\nekoproxy-agent\nekoproxy-agent.exe
+# Also accept the exe sitting directly beside this script or in the current dir.
 $ScriptDir = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Parent $MyInvocation.MyCommand.Path }
-$ExePath = Join-Path $ScriptDir $BinaryName
-if (-not (Test-Path $ExePath)) { $ExePath = Join-Path (Get-Location) $BinaryName }
-if (-not (Test-Path $ExePath)) {
-    Write-Host "ERROR: $BinaryName not found in script directory or current directory." -ForegroundColor Red
-    Write-Host "  Script dir : $ScriptDir" -ForegroundColor Yellow
-    Write-Host "  Current dir: $(Get-Location)" -ForegroundColor Yellow
+$SubDir = [IO.Path]::GetFileNameWithoutExtension($BinaryName)   # "nekoproxy-agent"
+$Candidates = @(
+    (Join-Path $ScriptDir (Join-Path $SubDir $BinaryName)),
+    (Join-Path (Get-Location) (Join-Path $SubDir $BinaryName)),
+    (Join-Path $ScriptDir $BinaryName),
+    (Join-Path (Get-Location) $BinaryName)
+)
+$ExePath = $Candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+if (-not $ExePath) {
+    Write-Host "ERROR: $BinaryName not found. Looked in:" -ForegroundColor Red
+    $Candidates | ForEach-Object { Write-Host "  $_" -ForegroundColor Yellow }
     exit 1
 }
 $ExeDir = Split-Path $ExePath -Parent

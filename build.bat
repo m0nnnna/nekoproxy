@@ -97,10 +97,9 @@ echo ============================================================
 
 python -m PyInstaller --clean --noconfirm --distpath dist\windows --workpath build\controller build\controller.spec
 
-if exist "dist\windows\nekoproxy-controller.exe" (
+if exist "dist\windows\nekoproxy-controller\nekoproxy-controller.exe" (
     echo.
-    echo Controller built successfully!
-    for %%A in (dist\windows\nekoproxy-controller.exe) do echo Output: dist\windows\nekoproxy-controller.exe ^(%%~zA bytes^)
+    echo Controller built successfully ^(onedir^): dist\windows\nekoproxy-controller\
 ) else (
     echo Error: Controller build failed!
     exit /b 1
@@ -116,10 +115,9 @@ echo ============================================================
 
 python -m PyInstaller --clean --noconfirm --distpath dist\windows --workpath build\agent build\agent.spec
 
-if exist "dist\windows\nekoproxy-agent.exe" (
+if exist "dist\windows\nekoproxy-agent\nekoproxy-agent.exe" (
     echo.
-    echo Agent built successfully!
-    for %%A in (dist\windows\nekoproxy-agent.exe) do echo Output: dist\windows\nekoproxy-agent.exe ^(%%~zA bytes^)
+    echo Agent built successfully ^(onedir^): dist\windows\nekoproxy-agent\
 ) else (
     echo Error: Agent build failed!
     exit /b 1

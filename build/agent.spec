@@ -108,24 +108,36 @@ a = Analysis(
 
 pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 
+# onedir, not onefile: a Windows service must answer the SCM within ~30s. A
+# onefile build spends that budget unpacking to a temp dir and spawning a second
+# process, so the service start times out with error 1053. onedir has no unpack
+# step - the process the SCM launches IS the app.
 exe = EXE(
     pyz,
     a.scripts,
-    a.binaries,
-    a.zipfiles,
-    a.datas,
     [],
+    exclude_binaries=True,
     name='nekoproxy-agent',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
-    upx=False,  # UPX-compressed onefile exes can fail bootloader PKG load (PYI-8960) and trip AV
+    upx=False,
     upx_exclude=[],
-    runtime_tmpdir=None,
     console=True,
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
+)
+
+coll = COLLECT(
+    exe,
+    a.binaries,
+    a.zipfiles,
+    a.datas,
+    strip=False,
+    upx=False,
+    upx_exclude=[],
+    name='nekoproxy-agent',
 )
