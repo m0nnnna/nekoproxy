@@ -152,6 +152,11 @@ a = Analysis(
 
 pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 
+# Optional app icon. Missing icon must not fail the build (e.g. fresh clone on a
+# build box) - PyInstaller raises FileNotFoundError if icon= points at nothing.
+_icon_file = project_root / 'build' / 'neko.ico'
+_icon = str(_icon_file) if _icon_file.is_file() else None
+
 exe = EXE(
     pyz,
     a.scripts,
@@ -172,5 +177,5 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=str(project_root / 'build' / 'neko.ico'),
+    icon=_icon,
 )
