@@ -374,16 +374,32 @@ if __name__ == "__main__":
     import uvicorn
 
     if sys.platform == "win32":
-        # SCM runs the exe with arg "service" (argv = [exe_path, "service"]); we host the service
-        if len(sys.argv) >= 2 and sys.argv[1].lower() == "service":
+        cmd = sys.argv[1].lower() if len(sys.argv) > 1 else ""
+        # The SCM launches the exe as "<exe> service" (see win_service._exe_args_).
+        # Hosting a frozen service means: Initialize -> PrepareToHostSingle ->
+        # StartServiceCtrlDispatcher. StartServiceCtrlDispatcher is what actually
+        # connects this process to the SCM; without it the service class's
+        # RegisterServiceCtrlHandler in __init__ fails and the process dies before
+        # anything runs (Start-Service -> error 1053).
+        if cmd == "service":
             import servicemanager
             ControllerService = _define_controller_service()
             if ControllerService is not None:
-                servicemanager.PrepareToHostSingle(ControllerService)
-                ControllerService(sys.argv).SvcRun()
+                try:
+                    servicemanager.Initialize()
+                    servicemanager.PrepareToHostSingle(ControllerService)
+                    servicemanager.StartServiceCtrlDispatcher()
+                except SystemExit:
+                    raise
+                except BaseException as e:
+                    # 1063 = not started by the SCM (someone ran "<exe> service" by hand)
+                    if getattr(e, "winerror", None) == 1063:
+                        print("This command is for the Service Control Manager. "
+                              "Use install-controller.ps1 (or '<exe> install' then 'start').")
+                        sys.exit(1)
+                    raise
                 sys.exit(0)
         # User ran exe with install/start/stop/remove/debug
-        cmd = sys.argv[1].lower() if len(sys.argv) > 1 else ""
         if cmd in ("install", "update", "start", "stop", "remove", "debug"):
             import win32serviceutil
             ControllerService = _define_controller_service()

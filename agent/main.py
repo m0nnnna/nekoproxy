@@ -873,16 +873,30 @@ if __name__ == "__main__":
     import sys
 
     if sys.platform == "win32":
-        # SCM runs the exe with arg "service" (argv = [exe_path, "service"]); we host the service
-        if len(sys.argv) >= 2 and sys.argv[1].lower() == "service":
+        cmd = sys.argv[1].lower() if len(sys.argv) > 1 else ""
+        # The SCM launches the exe as "<exe> service". Hosting a frozen service:
+        # Initialize -> PrepareToHostSingle -> StartServiceCtrlDispatcher. The
+        # dispatcher call is what connects this process to the SCM; without it the
+        # service dies in __init__ before anything runs (Start-Service -> 1053).
+        if cmd == "service":
             import servicemanager
             AgentService = _define_agent_service()
             if AgentService is not None:
-                servicemanager.PrepareToHostSingle(AgentService)
-                AgentService(sys.argv).SvcRun()
+                try:
+                    servicemanager.Initialize()
+                    servicemanager.PrepareToHostSingle(AgentService)
+                    servicemanager.StartServiceCtrlDispatcher()
+                except SystemExit:
+                    raise
+                except BaseException as e:
+                    # 1063 = not started by the SCM (someone ran "<exe> service" by hand)
+                    if getattr(e, "winerror", None) == 1063:
+                        print("This command is for the Service Control Manager. "
+                              "Use install-agent.ps1 (or '<exe> install' then 'start').")
+                        sys.exit(1)
+                    raise
                 sys.exit(0)
         # User ran exe with install/start/stop/remove/debug
-        cmd = sys.argv[1].lower() if len(sys.argv) > 1 else ""
         if cmd in ("install", "update", "start", "stop", "remove", "debug"):
             import win32serviceutil
             AgentService = _define_agent_service()
