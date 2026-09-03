@@ -323,6 +323,11 @@ def _controller_service_run(stop_event):
         log_level="debug" if settings.debug else "info",
         ssl_certfile=settings.ssl_certfile or None,
         ssl_keyfile=settings.ssl_keyfile or None,
+        # No console under the SCM: don't let uvicorn run its own dictConfig
+        # (its colour formatter calls sys.stdout.isatty()). Our root file handler
+        # from setup_service_logging catches uvicorn's propagated log records.
+        log_config=None,
+        use_colors=False,
     )
     server = uvicorn.Server(config)
 

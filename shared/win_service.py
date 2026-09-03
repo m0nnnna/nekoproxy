@@ -45,6 +45,16 @@ def setup_service_logging(name: str) -> str:
     leaves no trace. Logs land next to the exe in logs\\<name>.log.
     Returns the log file path.
     """
+    # A no-console service process has sys.stdout / sys.stderr == None. Anything
+    # that touches them crashes the service - notably uvicorn's log formatter,
+    # which calls sys.stdout.isatty(). Give them a real (throwaway) stream.
+    for _name in ("stdout", "stderr", "__stdout__", "__stderr__"):
+        if getattr(sys, _name, None) is None:
+            try:
+                setattr(sys, _name, open(os.devnull, "w"))
+            except OSError:
+                pass
+
     log_dir = os.path.join(_install_dir(), "logs")
     try:
         os.makedirs(log_dir, exist_ok=True)
@@ -54,6 +64,11 @@ def setup_service_logging(name: str) -> str:
 
     root = logging.getLogger()
     root.setLevel(logging.INFO)
+    # A StreamHandler created at import (logging.basicConfig) before the streams
+    # were restored will have stream=None and raise on every emit. Repoint it.
+    for h in list(root.handlers):
+        if isinstance(h, logging.StreamHandler) and getattr(h, "stream", None) is None:
+            h.stream = sys.stderr
     # Don't double-add on service restart within the same process.
     already = any(
         isinstance(h, logging.handlers.RotatingFileHandler)
