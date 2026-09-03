@@ -126,25 +126,68 @@ Upload a new agent binary on the **Agents** page and click **Update** next to an
 
 ### Windows: run as a service
 
+Install the binaries as Windows services so they start automatically when the server
+boots — no shell window to keep open. Run PowerShell **as Administrator** from `dist\windows\`.
+
+#### Controller (Windows service)
+
 ```powershell
-# Controller
-.\install-controller.ps1
+# Register + auto-start on boot, and start it now
 .\install-controller.ps1 -StartService
 
-# Agent (place agent.env in same folder as exe)
-.\install-agent.ps1
+# Set listen host / port / DB (writes .env next to the exe if it does not exist)
+.\install-controller.ps1 -ListenHost 0.0.0.0 -Port 8001 -StartService
+
+# Start after the network is up
+.\install-controller.ps1 -DelayedStart -StartService
+
+# Remove (leaves the database and .env in place)
+.\install-controller.ps1 -Uninstall
+```
+
+The installer registers the `nekoproxy-controller` service, sets it to **Automatic**
+startup, and configures **auto-restart on failure** (5s / 10s / 30s). Because a service
+starts with its working directory in `System32`, the frozen controller anchors itself to
+the exe folder — the database, TLS cert, `.env`, and uploads all live next to
+`nekoproxy-controller.exe`.
+
+- Config: `.env` in the same folder as `nekoproxy-controller.exe` (optional; defaults are `0.0.0.0:8001`, `sqlite:///./nekoproxy.db`)
+- Data: `nekoproxy.db`, `nekoproxy-controller-cert.pem`, `nekoproxy-controller-key.pem` next to the exe
+- Logs: `logs\nekoproxy-controller.log` next to the exe (the service has no console)
+- Manage: `Start-Service nekoproxy-controller` / `Stop-Service nekoproxy-controller` / `Get-Service nekoproxy-controller`
+- Firewall (if clients are remote):
+  `New-NetFirewallRule -DisplayName 'NekoProxy Controller' -Direction Inbound -Action Allow -Protocol TCP -LocalPort 8001`
+
+The admin API token is auto-generated on first run — read it from
+`logs\nekoproxy-controller.log`, or set `NEKO_API_TOKEN` in `.env`.
+
+#### Agent (Windows service)
+
+```powershell
+# Interactive: prompts for controller URL / hostname / WireGuard IP and writes agent.env
 .\install-agent.ps1 -StartService
+
+# Unattended
+.\install-agent.ps1 -ControllerUrl https://10.0.0.1:8001 -Hostname win-proxy-1 -WireguardIp 10.0.0.5 -StartService
+
+# Remove
 .\install-agent.ps1 -Uninstall
 ```
 
-Or call the exe directly:
+Same behaviour: Automatic startup, auto-restart on failure, config (`agent.env`) and logs
+(`logs\nekoproxy-agent.log`) next to the exe. If the controller is unreachable at boot the
+agent keeps retrying instead of exiting.
+
+#### Driving a service directly via the exe
 
 ```powershell
-.\nekoproxy-controller.exe install
+.\nekoproxy-controller.exe install   # register (manual start; use the .ps1 for boot start + recovery)
 .\nekoproxy-controller.exe start
 .\nekoproxy-controller.exe stop
 .\nekoproxy-controller.exe remove
 ```
+
+`nekoproxy-agent.exe` supports the same subcommands.
 
 ## Forward Proxy & Traffic Routing
 

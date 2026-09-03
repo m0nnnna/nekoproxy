@@ -16,6 +16,14 @@ All notable changes to NekoProxy are documented here.
   - `dist/windows/install-controller.ps1` and `dist/windows/install-agent.ps1`: register the .exe in the same directory as a Windows service (`-StartService`, `-Uninstall`).
   - Agent config loads from `agent.env` or `.env` next to the exe; WireGuard IP is optional for internal agents.
 
+- **Windows: run the controller (and agent) as a boot-start service**
+  - `install-controller.ps1` / `install-agent.ps1` now set the service to **Automatic** start (or `-DelayedStart`) and configure **SCM auto-restart on failure** (5s/10s/30s). The controller installer can write `.env` from `-ListenHost`/`-Port`/`-DatabaseUrl`; the agent installer writes `agent.env` from prompts or `-ControllerUrl`/`-Hostname`/`-WireguardIp`. Added `dist/windows/agent.env.example`.
+  - The frozen controller now anchors its working directory to the exe folder, so the SQLite DB, TLS cert, `.env` and uploads no longer land in `C:\Windows\System32` when started by the SCM.
+  - `_controller_service_run` detects a uvicorn startup failure (e.g. port already in use at boot) and exits non-zero so SCM recovery fires, instead of hanging in "Running".
+  - Both services log to `logs\<name>.log` next to the exe (no console under the SCM) and report crashes to the Windows Event Log.
+  - Agent retries controller registration with backoff instead of exiting, so a boot-time race (controller/network not ready) no longer stops the service.
+  - Fixed the Windows service `_run_callback` being bound as a method (service started but did nothing). `pywin32` is now a real Windows dependency in `requirements.txt`, and `pywintypes`/`pythoncom` are bundled in the specs.
+
 - **Controller sync for internal/same-machine agents**
   - Optional `control_url` on agents (e.g. `http://127.0.0.1:8002`) so the controller can trigger sync and push-update when the agent has no WireGuard IP. DB migration adds `agents.control_url`; agent sends it at registration via `NEKO_AGENT_CONTROL_URL`.
 

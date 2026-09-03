@@ -313,6 +313,8 @@ def _controller_service_run(stop_event):
     """Run the controller (uvicorn) until stop_event is set. Used by Windows service."""
     import threading
     import uvicorn
+    from shared.win_service import setup_service_logging
+    setup_service_logging("nekoproxy-controller")
     _ensure_tls()
     config = uvicorn.Config(
         app,
@@ -323,11 +325,30 @@ def _controller_service_run(stop_event):
         ssl_keyfile=settings.ssl_keyfile or None,
     )
     server = uvicorn.Server(config)
-    run_thread = threading.Thread(target=server.run, daemon=False)
+
+    result = {}
+    def _serve():
+        try:
+            server.run()
+        except BaseException as e:  # port already in use at boot, bad cert, etc.
+            result["error"] = e
+
+    run_thread = threading.Thread(target=_serve, daemon=False)
     run_thread.start()
-    stop_event.wait()
+
+    # Wake on a stop request OR the server thread dying on its own - otherwise a
+    # startup failure (e.g. port 8001 busy) would leave the service stuck
+    # "Running" and the SCM recovery actions would never fire.
+    while not stop_event.wait(timeout=1):
+        if not run_thread.is_alive():
+            break
     server.should_exit = True
     run_thread.join(timeout=15)
+
+    if "error" in result:
+        raise result["error"]
+    if not stop_event.is_set():
+        raise RuntimeError("uvicorn exited unexpectedly")
 
 
 # Windows service class (used when run as service or with install/start/stop/remove/debug)
@@ -344,7 +365,7 @@ def _define_controller_service():
         _svc_name_ = "nekoproxy-controller"
         _svc_display_name_ = "NekoProxy Controller"
         _svc_description_ = "NekoProxy central management server (web UI and API)"
-        _run_callback = _controller_service_run
+        _run_callback = staticmethod(_controller_service_run)
     return ControllerService
 
 

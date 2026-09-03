@@ -649,12 +649,27 @@ class NekoProxyAgent:
         # receives our https:// control_url during registration.
         self._pre_generate_control_cert()
 
-        # Register with controller
-        if not await self.register():
-            logger.error("Failed to register with controller - exiting")
-            return
-
         self._running = True
+
+        # Register with controller. Retry instead of exiting: at boot (Windows
+        # service / systemd) the controller or the network may not be ready yet,
+        # and giving up would stop the service until someone restarts it by hand.
+        attempt = 0
+        while self._running:
+            if await self.register():
+                break
+            attempt += 1
+            delay = min(60, 5 * attempt)
+            logger.warning(
+                "Registration failed (attempt %d) - retrying in %ds", attempt, delay
+            )
+            for _ in range(delay):
+                if not self._running:
+                    break
+                await asyncio.sleep(1)
+        if not self._running:
+            logger.info("Stop requested before registration completed")
+            return
 
         # Initialize firewall manager (iptables on Linux, Windows Firewall on Windows; requires admin on Windows)
         await self._firewall_manager.initialize()
@@ -827,7 +842,14 @@ async def main(stop_event=None):
 
 
 def _agent_service_run(stop_event):
-    """Run the agent until stop_event is set. Used by Windows service."""
+    """Run the agent until stop_event is set. Used by Windows service.
+
+    Runs with cwd = C:\\Windows\\System32, so logging must be redirected to a file
+    next to the exe or a failed start leaves no trace.
+    """
+    from shared.win_service import setup_service_logging
+    log_path = setup_service_logging("nekoproxy-agent")
+    logger.info("NekoProxy Agent service starting (log: %s)", log_path)
     asyncio.run(main(stop_event=stop_event))
 
 
@@ -842,8 +864,8 @@ def _define_agent_service():
     class AgentService(NekoProxyServiceFramework):
         _svc_name_ = "nekoproxy-agent"
         _svc_display_name_ = "NekoProxy Agent"
-        _svc_description_ = "NekoProxy proxy agent (connects to controller)"
-        _run_callback = _agent_service_run
+        _svc_description_ = "NekoProxy proxy agent (connects to controller). Starts automatically at boot."
+        _run_callback = staticmethod(_agent_service_run)
     return AgentService
 
 

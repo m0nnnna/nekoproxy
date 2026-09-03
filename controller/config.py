@@ -1,7 +1,21 @@
+import os
 import sys
 from pathlib import Path
 from pydantic_settings import BaseSettings
 from typing import Optional
+
+
+# A Windows service (and a bare double-clicked exe) starts with its working
+# directory set to C:\Windows\System32. Everything resolved relative to cwd -
+# the ".env" file, the SQLite DB ("sqlite:///./nekoproxy.db"), "./uploads/agent",
+# and the auto-generated TLS cert - would then land in (or fail under) System32.
+# Anchor cwd to the exe's own directory so the frozen controller behaves like the
+# Linux install (WorkingDirectory=/opt/nekoproxy). No effect when run from source.
+if getattr(sys, "frozen", False) and getattr(sys, "executable", None):
+    try:
+        os.chdir(Path(sys.executable).resolve().parent)
+    except OSError:
+        pass
 
 
 def get_base_path() -> Path:

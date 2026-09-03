@@ -136,6 +136,8 @@ a = Analysis(
         'win32con',
         'win32timezone',
         'servicemanager',
+        'pywintypes',
+        'pythoncom',
         'shared.win_service',
     ],
     hookspath=[],

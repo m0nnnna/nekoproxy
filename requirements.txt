@@ -20,8 +20,9 @@ cryptography>=41.0.0
 # Optional: Geo filtering on agent (allow/block by country); requires GeoLite2-Country.mmdb
 geoip2>=4.0.0
 
-# Windows service (optional - only for Windows build; enables install/start/stop/remove)
-# pywin32>=306
+# Windows service support (auto-installed on Windows only; enables the agent/controller
+# exe to install/start/stop/remove itself as a Windows service).
+pywin32>=306; sys_platform == "win32"
 
 # Build (optional - only needed for creating executables)
 # pyinstaller>=6.0.0

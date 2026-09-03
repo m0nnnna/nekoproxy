@@ -128,6 +128,15 @@ goto :build_done
 
 :build_done
 echo.
+echo Copying Windows install/update scripts to dist\windows\ ...
+if not exist dist\windows mkdir dist\windows
+copy /y install-controller.ps1 dist\windows\ >nul 2>&1
+copy /y install-agent.ps1      dist\windows\ >nul 2>&1
+copy /y update-controller.ps1  dist\windows\ >nul 2>&1
+copy /y update-agent.ps1       dist\windows\ >nul 2>&1
+copy /y agent.env.example      dist\windows\ >nul 2>&1
+
+echo.
 echo ============================================================
 echo Build Complete!
 echo ============================================================
