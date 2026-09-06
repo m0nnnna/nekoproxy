@@ -1,58 +1,78 @@
 #
 # NekoProxy Controller Updater for Windows
 #
-# Updates the controller binary without touching config or data.
-# Usage: .\update-controller.ps1 -BinaryPath "C:\path\to\new\nekoproxy-controller.exe"
+# Updates the controller program files without touching config or data
+# (.env, nekoproxy.db, *.pem, logs\, uploads\ are all left alone).
 #
-
+# The controller is a PyInstaller *onedir* build: nekoproxy-controller.exe only
+# runs with the matching _internal\ folder beside it. Copying the exe alone over
+# an older install leaves a mismatched _internal and the service dies on start,
+# so this script replaces both.
+#
+# Usage:
+#   .\update-controller.ps1 -BinaryPath "C:\path\to\new\nekoproxy-controller"      # the folder
+#   .\update-controller.ps1 -BinaryPath "C:\path\to\new\nekoproxy-controller\nekoproxy-controller.exe"
+#
 param(
     [Parameter(Mandatory=$true)]
     [string]$BinaryPath
 )
 
-$BinaryName = "nekoproxy-controller.exe"
+$BinaryName  = "nekoproxy-controller.exe"
+$ServiceName = "nekoproxy-controller"
 
-# Validate new binary exists
+# --- Resolve the new build (accept the onedir folder or the exe inside it) ---
 if (-not (Test-Path $BinaryPath)) {
-    Write-Host "ERROR: File not found: $BinaryPath" -ForegroundColor Red
+    Write-Host "ERROR: Not found: $BinaryPath" -ForegroundColor Red
+    exit 1
+}
+if ((Get-Item $BinaryPath).PSIsContainer) {
+    $NewExe = Join-Path $BinaryPath $BinaryName
+} else {
+    $NewExe = $BinaryPath
+}
+if (-not (Test-Path $NewExe)) {
+    Write-Host "ERROR: $BinaryName not found at $NewExe" -ForegroundColor Red
+    exit 1
+}
+$NewDir      = Split-Path $NewExe -Parent
+$NewInternal = Join-Path $NewDir "_internal"
+if (-not (Test-Path $NewInternal)) {
+    Write-Host "ERROR: $NewInternal not found." -ForegroundColor Red
+    Write-Host "       Point -BinaryPath at the folder produced by the build" -ForegroundColor Yellow
+    Write-Host "       (dist\windows\nekoproxy-controller\), not just the .exe." -ForegroundColor Yellow
     exit 1
 }
 
-# Find the currently running controller process to determine install location
+# --- Locate the current install ---
+$service = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
 $process = Get-Process -Name "nekoproxy-controller" -ErrorAction SilentlyContinue
-$service = Get-Service -Name "nekoproxy-controller" -ErrorAction SilentlyContinue
 
-if ($process) {
+$InstallPath = $null
+if ($service) {
+    # The SCM ImagePath is '"<exe>" service' - strip the quotes and the argument.
+    $imagePath = (Get-CimInstance -ClassName Win32_Service -Filter "Name='$ServiceName'").PathName
+    if ($imagePath -match '^\s*"([^"]+)"') { $InstallPath = $Matches[1] }
+    elseif ($imagePath) { $InstallPath = ($imagePath -split ' ')[0] }
+}
+if (-not $InstallPath -and $process) {
     $InstallPath = $process.Path
     if (-not $InstallPath) {
-        # Fallback: try to get from MainModule
-        try {
-            $InstallPath = $process.MainModule.FileName
-        } catch {
-            $InstallPath = $null
-        }
+        try { $InstallPath = $process.MainModule.FileName } catch { $InstallPath = $null }
     }
 }
-
-if (-not $InstallPath) {
-    # Try common install locations
+if (-not $InstallPath -or -not (Test-Path $InstallPath)) {
     $candidates = @(
         "$env:ProgramFiles\NekoProxy\$BinaryName",
+        "$env:ProgramFiles\NekoProxy\nekoproxy-controller\$BinaryName",
         "$env:LOCALAPPDATA\NekoProxy\$BinaryName",
         ".\$BinaryName"
     )
-    foreach ($candidate in $candidates) {
-        if (Test-Path $candidate) {
-            $InstallPath = $candidate
-            break
-        }
-    }
+    $InstallPath = $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
 }
-
 if (-not $InstallPath -or -not (Test-Path $InstallPath)) {
-    Write-Host "ERROR: Cannot find current installation." -ForegroundColor Red
-    Write-Host "Please specify the install directory:" -ForegroundColor Yellow
-    $InstallDir = Read-Host "Install directory"
+    Write-Host "ERROR: Cannot find the current installation." -ForegroundColor Red
+    $InstallDir = Read-Host "Install directory (the folder containing $BinaryName)"
     $InstallPath = Join-Path $InstallDir $BinaryName
     if (-not (Test-Path $InstallPath)) {
         Write-Host "ERROR: $InstallPath not found" -ForegroundColor Red
@@ -60,80 +80,104 @@ if (-not $InstallPath -or -not (Test-Path $InstallPath)) {
     }
 }
 
-$InstallDir = Split-Path $InstallPath -Parent
-$BackupPath = "$InstallPath.backup"
+$InstallDir     = Split-Path $InstallPath -Parent
+$OldInternal    = Join-Path $InstallDir "_internal"
+$BackupExe      = "$InstallPath.backup"
+$BackupInternal = "$OldInternal.backup"
+
+if ($service -and -not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
+    Write-Host "ERROR: Run PowerShell as Administrator to update the service." -ForegroundColor Red
+    exit 1
+}
 
 Write-Host ""
 Write-Host "================================================" -ForegroundColor Cyan
 Write-Host "  NekoProxy Controller Updater (Windows)" -ForegroundColor Cyan
 Write-Host "================================================" -ForegroundColor Cyan
 Write-Host ""
-Write-Host "Install path: $InstallPath"
-Write-Host "New binary:   $BinaryPath"
+Write-Host "Install dir: $InstallDir"
+Write-Host "New build:   $NewDir"
 Write-Host ""
 
-# Step 1: Stop the process/service
+# --- Step 1: Stop ---
 Write-Host "Stopping controller..." -ForegroundColor Cyan
 if ($service) {
-    Stop-Service -Name "nekoproxy-controller" -Force -ErrorAction SilentlyContinue
+    Stop-Service -Name $ServiceName -Force -ErrorAction SilentlyContinue
     Write-Host "[OK] Stopped service" -ForegroundColor Green
 } elseif ($process) {
     Stop-Process -Name "nekoproxy-controller" -Force -ErrorAction SilentlyContinue
-    Start-Sleep -Seconds 2
     Write-Host "[OK] Stopped process" -ForegroundColor Green
 } else {
     Write-Host "[!] Controller was not running" -ForegroundColor Yellow
 }
 
-# Wait for process to fully exit
-Start-Sleep -Seconds 1
 $retries = 0
-while ((Get-Process -Name "nekoproxy-controller" -ErrorAction SilentlyContinue) -and $retries -lt 10) {
+while ((Get-Process -Name "nekoproxy-controller" -ErrorAction SilentlyContinue) -and $retries -lt 15) {
     Start-Sleep -Seconds 1
     $retries++
 }
 
-# Step 2: Backup current binary
-Write-Host "Backing up current binary..." -ForegroundColor Cyan
-Copy-Item $InstallPath $BackupPath -Force
-Write-Host "[OK] Backed up to $BackupPath" -ForegroundColor Green
+# --- Step 2: Back up the program files (data files are untouched) ---
+Write-Host "Backing up current build..." -ForegroundColor Cyan
+Copy-Item $InstallPath $BackupExe -Force
+if (Test-Path $OldInternal) {
+    if (Test-Path $BackupInternal) { Remove-Item -Recurse -Force $BackupInternal }
+    Move-Item $OldInternal $BackupInternal -Force
+}
+Write-Host "[OK] Backed up to $BackupExe / $BackupInternal" -ForegroundColor Green
 
-# Step 3: Copy new binary
-Write-Host "Installing new binary..." -ForegroundColor Cyan
-Copy-Item $BinaryPath $InstallPath -Force
-Write-Host "[OK] Installed new binary" -ForegroundColor Green
+# --- Step 3: Install the new build ---
+Write-Host "Installing new build..." -ForegroundColor Cyan
+try {
+    Copy-Item $NewExe $InstallPath -Force
+    Copy-Item $NewInternal $OldInternal -Recurse -Force
+    Write-Host "[OK] Installed exe + _internal" -ForegroundColor Green
+} catch {
+    Write-Host "ERROR: Copy failed: $_" -ForegroundColor Red
+    Write-Host "Restoring previous build..." -ForegroundColor Yellow
+    Copy-Item $BackupExe $InstallPath -Force
+    if (Test-Path $OldInternal) { Remove-Item -Recurse -Force $OldInternal }
+    if (Test-Path $BackupInternal) { Move-Item $BackupInternal $OldInternal -Force }
+    exit 1
+}
 
-# Step 4: Start
+function Restore-Previous {
+    Copy-Item $BackupExe $InstallPath -Force
+    if (Test-Path $OldInternal) { Remove-Item -Recurse -Force $OldInternal }
+    if (Test-Path $BackupInternal) { Copy-Item $BackupInternal $OldInternal -Recurse -Force }
+}
+
+# --- Step 4: Start ---
 Write-Host "Starting controller..." -ForegroundColor Cyan
 if ($service) {
-    Start-Service -Name "nekoproxy-controller"
-    Start-Sleep -Seconds 3
-    $svc = Get-Service -Name "nekoproxy-controller"
+    Start-Service -Name $ServiceName -ErrorAction SilentlyContinue
+    Start-Sleep -Seconds 5
+    $svc = Get-Service -Name $ServiceName
     if ($svc.Status -eq "Running") {
         Write-Host "[OK] Service is running!" -ForegroundColor Green
     } else {
-        Write-Host "[ERROR] Service failed to start" -ForegroundColor Red
+        Write-Host "[ERROR] Service failed to start (status: $($svc.Status))." -ForegroundColor Red
+        Write-Host "        Check $InstallDir\logs\$ServiceName.log" -ForegroundColor Yellow
+        Write-Host "        and  $InstallDir\logs\$ServiceName-startup.log" -ForegroundColor Yellow
         $rollback = Read-Host "Rollback to previous version? (y/n)"
         if ($rollback -eq "y") {
-            Stop-Service -Name "nekoproxy-controller" -Force -ErrorAction SilentlyContinue
-            Copy-Item $BackupPath $InstallPath -Force
-            Start-Service -Name "nekoproxy-controller"
+            Stop-Service -Name $ServiceName -Force -ErrorAction SilentlyContinue
+            Restore-Previous
+            Start-Service -Name $ServiceName
             Write-Host "[OK] Rolled back" -ForegroundColor Green
         }
     }
 } else {
-    # Start as a regular process
-    Start-Process -FilePath $InstallPath -WindowStyle Hidden
-    Start-Sleep -Seconds 3
-    $newProc = Get-Process -Name "nekoproxy-controller" -ErrorAction SilentlyContinue
-    if ($newProc) {
+    Start-Process -FilePath $InstallPath -WorkingDirectory $InstallDir -WindowStyle Hidden
+    Start-Sleep -Seconds 5
+    if (Get-Process -Name "nekoproxy-controller" -ErrorAction SilentlyContinue) {
         Write-Host "[OK] Controller is running!" -ForegroundColor Green
     } else {
         Write-Host "[ERROR] Controller failed to start" -ForegroundColor Red
         $rollback = Read-Host "Rollback to previous version? (y/n)"
         if ($rollback -eq "y") {
-            Copy-Item $BackupPath $InstallPath -Force
-            Start-Process -FilePath $InstallPath -WindowStyle Hidden
+            Restore-Previous
+            Start-Process -FilePath $InstallPath -WorkingDirectory $InstallDir -WindowStyle Hidden
             Write-Host "[OK] Rolled back" -ForegroundColor Green
         }
     }
@@ -141,5 +185,5 @@ if ($service) {
 
 Write-Host ""
 Write-Host "Update complete. Config and data preserved." -ForegroundColor Green
-Write-Host "Backup at: $BackupPath" -ForegroundColor Cyan
-Write-Host "Rollback:  Copy-Item '$BackupPath' '$InstallPath' -Force" -ForegroundColor Cyan
+Write-Host "Backup: $BackupExe and $BackupInternal" -ForegroundColor Cyan
+Write-Host ""

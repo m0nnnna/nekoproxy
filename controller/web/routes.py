@@ -63,7 +63,7 @@ def _require_session(
 @router.get("/login", response_class=HTMLResponse)
 async def login_page(request: Request):
     """Render the login form."""
-    return templates.TemplateResponse("login.html", {"request": request, "error": None})
+    return templates.TemplateResponse(request, "login.html", {"request": request, "error": None})
 
 
 @router.post("/login")
@@ -86,7 +86,7 @@ async def login(
         )
         return response
     return templates.TemplateResponse(
-        "login.html",
+        request, "login.html",
         {"request": request, "error": "Invalid password"},
         status_code=401,
     )
@@ -114,7 +114,7 @@ async def dashboard(request: Request, _auth: None = Depends(_require_session), d
     stats_summary["auto_blocklist_count"] = blocklist_repo.get_auto_added_count(hours=24)
     recent_connections = stat_repo.get_recent(hours=1, limit=10)
 
-    return templates.TemplateResponse("dashboard.html", {
+    return templates.TemplateResponse(request, "dashboard.html", {
         "request": request,
         "agents": agents,
         "stats": stats_summary,
@@ -140,7 +140,7 @@ async def agents_page(request: Request, _auth: None = Depends(_require_session),
     agent_binary_path = _get_uploaded_agent_path()
     has_uploaded_binary = agent_binary_path.is_file()
 
-    return templates.TemplateResponse("agents.html", {
+    return templates.TemplateResponse(request, "agents.html", {
         "request": request,
         "agents": agents,
         "has_uploaded_binary": has_uploaded_binary,
@@ -328,7 +328,7 @@ async def create_service_htmx(
 
     # Return updated services list
     services = repo.get_all()
-    return templates.TemplateResponse("partials/services_table.html", {
+    return templates.TemplateResponse(request, "partials/services_table.html", {
         "request": request,
         "services": services
     })
@@ -399,7 +399,7 @@ async def create_assignment_htmx(
     assignments = assign_repo.get_all()
     services = service_repo.get_all()
     agents = agent_repo.get_all()
-    return templates.TemplateResponse("partials/assignments_table.html", {
+    return templates.TemplateResponse(request, "partials/assignments_table.html", {
         "request": request,
         "assignments": assignments,
         "services": services,
@@ -433,7 +433,7 @@ async def toggle_assignment_htmx(request: Request, assignment_id: int, _auth: No
     assignments = assign_repo.get_all()
     services = service_repo.get_all()
     agents = agent_repo.get_all()
-    return templates.TemplateResponse("partials/assignments_table.html", {
+    return templates.TemplateResponse(request, "partials/assignments_table.html", {
         "request": request,
         "assignments": assignments,
         "services": services,
@@ -461,7 +461,7 @@ async def settings_page(request: Request, _auth: None = Depends(_require_session
         "dns_port": gs.dns_port if gs and gs.dns_port else 0,
         "dns_upstream": gs.dns_upstream if gs and gs.dns_upstream else "1.1.1.1:53",
     }
-    return templates.TemplateResponse("settings.html", {
+    return templates.TemplateResponse(request, "settings.html", {
         "request": request,
         "settings": settings_dict,
         "agents": agents,
@@ -521,7 +521,7 @@ async def blocklist_page(request: Request, _auth: None = Depends(_require_sessio
     blocklist_repo = BlocklistRepository(db)
     entries = blocklist_repo.get_all()
 
-    return templates.TemplateResponse("blocklist.html", {
+    return templates.TemplateResponse(request, "blocklist.html", {
         "request": request,
         "entries": entries,
         "active_page": "blocklist"
@@ -551,7 +551,7 @@ async def add_blocklist_htmx(
 
     # Return updated blocklist
     entries = repo.get_all()
-    return templates.TemplateResponse("partials/blocklist_table.html", {
+    return templates.TemplateResponse(request, "partials/blocklist_table.html", {
         "request": request,
         "entries": entries
     })
@@ -619,7 +619,7 @@ async def live_page(request: Request, _auth: None = Depends(_require_session), d
     """Live view: connections in the last 60 seconds, auto-refreshing."""
     stat_repo = ConnectionStatRepository(db)
     connections = stat_repo.get_recent_seconds(seconds=60, limit=200)
-    return templates.TemplateResponse("live.html", {
+    return templates.TemplateResponse(request, "live.html", {
         "request": request,
         "connections": connections,
         "active_page": "live"
@@ -631,7 +631,7 @@ async def live_connections_partial(request: Request, seconds: int = 60, _auth: N
     """Partial for live connection list (HTMX poll every 2s)."""
     stat_repo = ConnectionStatRepository(db)
     connections = stat_repo.get_recent_seconds(seconds=seconds, limit=200)
-    return templates.TemplateResponse("partials/live_connections.html", {
+    return templates.TemplateResponse(request, "partials/live_connections.html", {
         "request": request,
         "connections": connections,
     })
@@ -693,7 +693,7 @@ async def stats_page(request: Request, period: str = "24h", _auth: None = Depend
     recent_emails = email_stat_repo.get_recent(hours=log_hours, limit=100)
     recent_firewall = firewall_stat_repo.get_recent(hours=log_hours, limit=100)
 
-    return templates.TemplateResponse("stats.html", {
+    return templates.TemplateResponse(request, "stats.html", {
         "request": request,
         "summary": summary,
         "email_summary": email_summary,
@@ -730,7 +730,7 @@ async def firewall_page(request: Request, _auth: None = Depends(_require_session
     rules = firewall_repo.get_all()
     agents = agent_repo.get_all()
 
-    return templates.TemplateResponse("firewall.html", {
+    return templates.TemplateResponse(request, "firewall.html", {
         "request": request,
         "rules": rules,
         "agents": agents,
@@ -781,7 +781,7 @@ async def create_firewall_rule_htmx(
     # Return updated rules list
     rules = repo.get_all()
     agents = agent_repo.get_all()
-    return templates.TemplateResponse("partials/firewall_table.html", {
+    return templates.TemplateResponse(request, "partials/firewall_table.html", {
         "request": request,
         "rules": rules,
         "agents": agents
@@ -812,7 +812,7 @@ async def toggle_firewall_rule_htmx(request: Request, rule_id: int, _auth: None 
     # Return updated rules list
     rules = repo.get_all()
     agents = agent_repo.get_all()
-    return templates.TemplateResponse("partials/firewall_table.html", {
+    return templates.TemplateResponse(request, "partials/firewall_table.html", {
         "request": request,
         "rules": rules,
         "agents": agents
@@ -929,7 +929,7 @@ async def rules_page(request: Request, _auth: None = Depends(_require_session), 
             "service": assignment.service
         })
 
-    return templates.TemplateResponse("rules.html", {
+    return templates.TemplateResponse(request, "rules.html", {
         "request": request,
         "rules": rules,
         "agents": agents,
@@ -1008,7 +1008,7 @@ async def create_rule_htmx(
             "service": assignment.service
         })
 
-    return templates.TemplateResponse("partials/rules_table.html", {
+    return templates.TemplateResponse(request, "partials/rules_table.html", {
         "request": request,
         "rules": rules
     })
@@ -1034,7 +1034,7 @@ async def toggle_rule_htmx(request: Request, assignment_id: int, _auth: None = D
             "service": a.service
         })
 
-    return templates.TemplateResponse("partials/rules_table.html", {
+    return templates.TemplateResponse(request, "partials/rules_table.html", {
         "request": request,
         "rules": rules
     })
@@ -1139,7 +1139,7 @@ async def alerts_page(request: Request, _auth: None = Depends(_require_session),
             "agent_hostname": agent_hostname
         })
 
-    return templates.TemplateResponse("alerts.html", {
+    return templates.TemplateResponse(request, "alerts.html", {
         "request": request,
         "alerts": alerts_with_agents,
         "counts": counts,
@@ -1174,7 +1174,7 @@ async def acknowledge_alert_htmx(request: Request, alert_id: int, _auth: None = 
             "agent_hostname": agent_hostname
         })
 
-    return templates.TemplateResponse("partials/alerts_table.html", {
+    return templates.TemplateResponse(request, "partials/alerts_table.html", {
         "request": request,
         "alerts": alerts_with_agents
     })
@@ -1202,7 +1202,7 @@ async def acknowledge_all_alerts_htmx(request: Request, _auth: None = Depends(_r
             "agent_hostname": agent_hostname
         })
 
-    return templates.TemplateResponse("partials/alerts_table.html", {
+    return templates.TemplateResponse(request, "partials/alerts_table.html", {
         "request": request,
         "alerts": alerts_with_agents
     })
@@ -1251,7 +1251,7 @@ async def block_ip_from_alert_htmx(request: Request, alert_id: int, _auth: None 
             "agent_hostname": agent_hostname
         })
 
-    return templates.TemplateResponse("partials/alerts_table.html", {
+    return templates.TemplateResponse(request, "partials/alerts_table.html", {
         "request": request,
         "alerts": alerts_with_agents
     })
@@ -1263,7 +1263,7 @@ async def agents_status_partial(request: Request, _auth: None = Depends(_require
     """Partial for agent status updates."""
     agent_repo = AgentRepository(db)
     agents = agent_repo.get_all()
-    return templates.TemplateResponse("partials/agents_status.html", {
+    return templates.TemplateResponse(request, "partials/agents_status.html", {
         "request": request,
         "agents": agents
     })
@@ -1281,7 +1281,7 @@ async def stats_summary_partial(request: Request, period: str = "24h", _auth: No
 
     summary = stat_repo.get_stats_summary(hours=hours)
     summary["auto_blocklist_count"] = blocklist_repo.get_auto_added_count(hours=hours)
-    return templates.TemplateResponse("partials/stats_summary.html", {
+    return templates.TemplateResponse(request, "partials/stats_summary.html", {
         "request": request,
         "stats": summary
     })
@@ -1345,7 +1345,7 @@ async def email_page(request: Request, _auth: None = Depends(_require_session), 
         except Exception as e:
             logger.warning(f"Failed to sync Mailcow data on page load: {e}")
 
-    return templates.TemplateResponse("email.html", {
+    return templates.TemplateResponse(request, "email.html", {
         "request": request,
         "config": config,
         "deployments": deployments,
@@ -1537,7 +1537,7 @@ async def create_email_user_htmx(
     users = user_repo.get_all()
     agents = agent_repo.get_all()
 
-    response = templates.TemplateResponse("partials/email_users_table.html", {
+    response = templates.TemplateResponse(request, "partials/email_users_table.html", {
         "request": request,
         "users": users,
         "agents": agents
@@ -1577,7 +1577,7 @@ async def toggle_email_user_htmx(request: Request, user_id: int, _auth: None = D
     # Return updated users list
     users = user_repo.get_all()
     agents = agent_repo.get_all()
-    return templates.TemplateResponse("partials/email_users_table.html", {
+    return templates.TemplateResponse(request, "partials/email_users_table.html", {
         "request": request,
         "users": users,
         "agents": agents
@@ -1607,7 +1607,7 @@ async def add_email_blocklist_htmx(
 
     # Return updated blocklist
     blocklist = repo.get_all()
-    return templates.TemplateResponse("partials/email_blocklist_table.html", {
+    return templates.TemplateResponse(request, "partials/email_blocklist_table.html", {
         "request": request,
         "blocklist": blocklist
     })
@@ -1672,7 +1672,7 @@ async def create_sasl_user_htmx(
     # Return updated SASL users list
     sasl_users = sasl_repo.get_all()
     agents = agent_repo.get_all()
-    return templates.TemplateResponse("partials/email_sasl_table.html", {
+    return templates.TemplateResponse(request, "partials/email_sasl_table.html", {
         "request": request,
         "sasl_users": sasl_users,
         "agents": agents
@@ -1703,7 +1703,7 @@ async def toggle_sasl_user_htmx(request: Request, user_id: int, _auth: None = De
     # Return updated SASL users list
     sasl_users = sasl_repo.get_all()
     agents = agent_repo.get_all()
-    return templates.TemplateResponse("partials/email_sasl_table.html", {
+    return templates.TemplateResponse(request, "partials/email_sasl_table.html", {
         "request": request,
         "sasl_users": sasl_users,
         "agents": agents
@@ -1754,7 +1754,7 @@ async def create_domain_htmx(
 
     # Return updated domains list
     domains = domain_repo.get_all()
-    return templates.TemplateResponse("partials/email_domains_table.html", {
+    return templates.TemplateResponse(request, "partials/email_domains_table.html", {
         "request": request,
         "domains": domains
     })
@@ -1782,7 +1782,7 @@ async def toggle_domain_htmx(request: Request, domain_id: int, _auth: None = Dep
 
     # Return updated domains list
     domains = domain_repo.get_all()
-    return templates.TemplateResponse("partials/email_domains_table.html", {
+    return templates.TemplateResponse(request, "partials/email_domains_table.html", {
         "request": request,
         "domains": domains
     })
@@ -1799,7 +1799,7 @@ async def sync_mailcow_domains_htmx(request: Request, _auth: None = Depends(_req
 
     if count > 0:
         domains = domain_repo.get_all()
-        response = templates.TemplateResponse("partials/email_domains_table.html", {
+        response = templates.TemplateResponse(request, "partials/email_domains_table.html", {
             "request": request,
             "domains": domains
         })
@@ -1821,7 +1821,7 @@ async def get_mailcow_mailboxes_htmx(request: Request, _auth: None = Depends(_re
     # Return cached data
     mailboxes = manager.get_cached_mailboxes()
 
-    return templates.TemplateResponse("partials/email_mailcow_mailboxes.html", {
+    return templates.TemplateResponse(request, "partials/email_mailcow_mailboxes.html", {
         "request": request,
         "mailboxes": mailboxes
     })
@@ -1836,7 +1836,7 @@ async def get_mailcow_aliases_htmx(request: Request, _auth: None = Depends(_requ
     # Return cached data
     aliases = manager.get_cached_aliases()
 
-    return templates.TemplateResponse("partials/email_mailcow_aliases.html", {
+    return templates.TemplateResponse(request, "partials/email_mailcow_aliases.html", {
         "request": request,
         "aliases": aliases
     })
@@ -1857,7 +1857,7 @@ async def create_mailcow_alias_htmx(
         # Sync and return cached aliases
         await manager.sync_mailcow_aliases()
         aliases = manager.get_cached_aliases()
-        return templates.TemplateResponse("partials/email_mailcow_aliases.html", {
+        return templates.TemplateResponse(request, "partials/email_mailcow_aliases.html", {
             "request": request,
             "aliases": aliases
         })

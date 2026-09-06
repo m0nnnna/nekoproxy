@@ -24,8 +24,10 @@ def get_base_path() -> Path:
         # Running as compiled executable
         return Path(sys._MEIPASS)
     else:
-        # Running as script
-        return Path(__file__).parent
+        # Running from source: paths below are project-root relative
+        # ("controller/web/templates"), so anchor at the repo root - the parent
+        # of the "controller" package this file lives in.
+        return Path(__file__).resolve().parent.parent
 
 
 class Settings(BaseSettings):

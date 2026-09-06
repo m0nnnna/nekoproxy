@@ -144,13 +144,26 @@ try {
     Write-Host "[OK] Recovery: auto-restart after 5s / 10s / 30s." -ForegroundColor Green
 
     if ($StartService) {
-        Start-Service -Name $ServiceName
-        Start-Sleep -Seconds 4
+        Start-Service -Name $ServiceName -ErrorAction SilentlyContinue
+        Start-Sleep -Seconds 5
         $svc = Get-Service -Name $ServiceName
         if ($svc.Status -eq "Running") {
             Write-Host "[OK] Controller started." -ForegroundColor Green
         } else {
-            Write-Host "[!] Service status: $($svc.Status). Check logs\$ServiceName.log" -ForegroundColor Yellow
+            # Don't leave the user with just a status word: the service writes the
+            # real reason (port in use, bad .env, import error) to these files.
+            Write-Host "[!] Service status: $($svc.Status)" -ForegroundColor Yellow
+            foreach ($log in @("$ExeDir\logs\$ServiceName-startup.log", "$ExeDir\logs\$ServiceName.log")) {
+                if (Test-Path $log) {
+                    Write-Host ""
+                    Write-Host "--- last 20 lines of $log ---" -ForegroundColor Yellow
+                    Get-Content $log -Tail 20 | ForEach-Object { Write-Host "  $_" -ForegroundColor Gray }
+                } else {
+                    Write-Host "[!] No $log - the exe died before it could log." -ForegroundColor Yellow
+                }
+            }
+            Write-Host ""
+            Write-Host "Also check: Get-EventLog -LogName Application -Newest 20 | Where-Object Source -match 'nekoproxy'" -ForegroundColor Gray
         }
     } else {
         Write-Host ""

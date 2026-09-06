@@ -37,6 +37,49 @@ def _install_dir() -> str:
     return os.getcwd()
 
 
+def redirect_null_streams() -> None:
+    """Give sys.stdout / sys.stderr a real stream when the process has no console.
+
+    A service started by the SCM has no console, so sys.stdout and sys.stderr are
+    None. Anything that touches them raises - a bare print(), or uvicorn's log
+    formatter calling sys.stdout.isatty() - and the service dies before it can
+    report anything. Call this first, before any other service work.
+    """
+    for _name in ("stdout", "stderr", "__stdout__", "__stderr__"):
+        if getattr(sys, _name, None) is None:
+            try:
+                setattr(sys, _name, open(os.devnull, "w"))
+            except OSError:
+                pass
+
+
+def log_startup_failure(name: str, message: str) -> str:
+    """Record a service startup crash where a human can find it.
+
+    Failures before (or inside) the SCM handshake produce nothing anywhere:
+    no console, no log handlers yet, and the SCM only reports a numeric error.
+    Write the traceback to logs\\<name>-startup.log next to the exe and mirror it
+    to the Windows event log. Returns the path written.
+    """
+    log_dir = os.path.join(_install_dir(), "logs")
+    try:
+        os.makedirs(log_dir, exist_ok=True)
+    except Exception:
+        log_dir = _install_dir()
+    path = os.path.join(log_dir, f"{name}-startup.log")
+    stamp = time.strftime("%Y-%m-%d %H:%M:%S")
+    try:
+        with open(path, "a", encoding="utf-8") as fh:
+            fh.write(f"\n===== {stamp} =====\n{message}\n")
+    except OSError:
+        pass
+    try:
+        servicemanager.LogErrorMsg(f"{name}: {message}")
+    except Exception:
+        pass
+    return path
+
+
 def setup_service_logging(name: str) -> str:
     """Attach a rotating file handler to the root logger.
 
@@ -45,15 +88,7 @@ def setup_service_logging(name: str) -> str:
     leaves no trace. Logs land next to the exe in logs\\<name>.log.
     Returns the log file path.
     """
-    # A no-console service process has sys.stdout / sys.stderr == None. Anything
-    # that touches them crashes the service - notably uvicorn's log formatter,
-    # which calls sys.stdout.isatty(). Give them a real (throwaway) stream.
-    for _name in ("stdout", "stderr", "__stdout__", "__stderr__"):
-        if getattr(sys, _name, None) is None:
-            try:
-                setattr(sys, _name, open(os.devnull, "w"))
-            except OSError:
-                pass
+    redirect_null_streams()
 
     log_dir = os.path.join(_install_dir(), "logs")
     try:
@@ -121,6 +156,19 @@ class NekoProxyServiceFramework(win32serviceutil.ServiceFramework):
         return cb
 
     def SvcDoRun(self):
+        try:
+            self._svc_do_run()
+        except Exception:
+            # Never let the SCM see a silent death: without this the only trace
+            # is "the service terminated unexpectedly" in the event log.
+            log_startup_failure(
+                self._svc_name_, "SvcDoRun failed:\n" + traceback.format_exc()
+            )
+            self.ReportServiceStatus(win32service.SERVICE_STOPPED, win32ExitCode=1)
+            os._exit(1)
+
+    def _svc_do_run(self):
+        setup_service_logging(self._svc_name_)
         servicemanager.LogInfoMsg(f"{self._svc_name_}: starting")
         callback = self._resolve_callback()
 

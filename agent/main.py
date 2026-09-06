@@ -879,23 +879,34 @@ if __name__ == "__main__":
         # dispatcher call is what connects this process to the SCM; without it the
         # service dies in __init__ before anything runs (Start-Service -> 1053).
         if cmd == "service":
-            import servicemanager
-            AgentService = _define_agent_service()
-            if AgentService is not None:
-                try:
-                    servicemanager.Initialize()
-                    servicemanager.PrepareToHostSingle(AgentService)
-                    servicemanager.StartServiceCtrlDispatcher()
-                except SystemExit:
-                    raise
-                except BaseException as e:
-                    # 1063 = not started by the SCM (someone ran "<exe> service" by hand)
-                    if getattr(e, "winerror", None) == 1063:
-                        print("This command is for the Service Control Manager. "
-                              "Use install-agent.ps1 (or '<exe> install' then 'start').")
-                        sys.exit(1)
-                    raise
-                sys.exit(0)
+            import traceback
+            from shared.win_service import redirect_null_streams, log_startup_failure
+            # No console under the SCM: sys.stdout/sys.stderr are None until this
+            # runs, so even a print() in an error path would kill the process.
+            redirect_null_streams()
+            try:
+                import servicemanager
+                AgentService = _define_agent_service()
+                servicemanager.Initialize()
+                servicemanager.PrepareToHostSingle(AgentService)
+                servicemanager.StartServiceCtrlDispatcher()
+            except SystemExit:
+                raise
+            except BaseException as e:
+                # 1063 = not started by the SCM (someone ran "<exe> service" by hand)
+                if getattr(e, "winerror", None) == 1063:
+                    print("This command is for the Service Control Manager. "
+                          "Use install-agent.ps1 (or '<exe> install' then 'start').")
+                    sys.exit(1)
+                # Anything else died before the service could log anything itself
+                # (missing DLL, bad config, import error). Leave a trace on disk.
+                path = log_startup_failure(
+                    "nekoproxy-agent",
+                    "failed to host the service:\n" + traceback.format_exc(),
+                )
+                print(f"Service startup failed - see {path}")
+                sys.exit(1)
+            sys.exit(0)
         # User ran exe with install/start/stop/remove/debug
         if cmd in ("install", "update", "start", "stop", "remove", "debug"):
             import win32serviceutil

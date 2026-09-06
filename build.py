@@ -116,16 +116,31 @@ def build_component(component: str, current_platform: str):
         result = subprocess.run(cmd, cwd=str(PROJECT_ROOT), check=True)
         print(f"\n{component} built successfully!")
 
-        # Show output location
+        # Show output location. The specs build onedir (required for the Windows
+        # service), so the exe lives in <dist>/nekoproxy-<component>/ next to
+        # _internal - NOT loose in <dist>.
+        exe_name = f"nekoproxy-{component}"
         if current_platform == "windows":
-            exe_name = f"nekoproxy-{component}.exe"
-        else:
-            exe_name = f"nekoproxy-{component}"
+            exe_name += ".exe"
 
-        output_path = output_dir / exe_name
+        bundle_dir = output_dir / f"nekoproxy-{component}"
+        output_path = bundle_dir / exe_name
+
+        # A leftover exe from an older onefile build sitting loose in <dist> is a
+        # trap: it looks like the thing to deploy, and installing it as a service
+        # brings back the 1053 timeout. Remove it once the onedir build succeeds.
+        stale = output_dir / exe_name
+        if output_path.exists() and stale.exists():
+            try:
+                stale.unlink()
+                print(f"Removed stale single-file build: {stale}")
+            except OSError as e:
+                print(f"Warning: could not remove stale {stale}: {e}")
+
         if output_path.exists():
-            size_mb = output_path.stat().st_size / (1024 * 1024)
-            print(f"Output: {output_path} ({size_mb:.1f} MB)")
+            size_mb = sum(f.stat().st_size for f in bundle_dir.rglob("*") if f.is_file()) / (1024 * 1024)
+            print(f"Output: {bundle_dir} ({size_mb:.1f} MB)")
+            print(f"        deploy the whole folder - {exe_name} needs its _internal beside it")
 
         return True
     except subprocess.CalledProcessError as e:
