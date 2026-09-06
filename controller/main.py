@@ -378,6 +378,27 @@ if __name__ == "__main__":
     import sys
     import uvicorn
 
+    # "selfcheck": prove this copy of the build can actually run, without starting
+    # anything. An incomplete onedir deployment (exe copied without its _internal,
+    # or a half-copied _internal) dies in the PyInstaller bootloader with
+    # "Failed to load Python DLL" - before any of our code runs and before the
+    # SCM can report anything useful. The installers run this first.
+    if len(sys.argv) > 1 and sys.argv[1].lower() == "selfcheck":
+        import os
+        print(f"exe       : {sys.executable}")
+        print(f"frozen    : {bool(getattr(sys, 'frozen', False))}")
+        print(f"python    : {sys.version.split()[0]}")
+        print(f"workdir   : {os.getcwd()}")
+        print(f"templates : {settings.templates_dir} "
+              f"({'ok' if settings.templates_dir.is_dir() else 'MISSING'})")
+        print(f"static    : {settings.static_dir} "
+              f"({'ok' if settings.static_dir.is_dir() else 'MISSING'})")
+        print(f"database  : {settings.database_url}")
+        print(f"listen    : {settings.host}:{settings.port}")
+        ok = settings.templates_dir.is_dir() and settings.static_dir.is_dir()
+        print("selfcheck : " + ("OK" if ok else "FAILED"))
+        sys.exit(0 if ok else 1)
+
     if sys.platform == "win32":
         cmd = sys.argv[1].lower() if len(sys.argv) > 1 else ""
         # The SCM launches the exe as "<exe> service" (see win_service._exe_args_).

@@ -49,6 +49,40 @@ if (-not $ExePath) {
 }
 $ExeDir = Split-Path $ExePath -Parent
 
+# --- Verify the deployment is complete before touching the SCM ---
+# This is an onedir build: the exe needs its _internal\ folder beside it. Copying
+# the exe alone (or a half-copied _internal) gives
+#   "Failed to load Python DLL ... _internal\python3xx.dll"
+# and the service can never start - it dies in the bootloader, so it never gets
+# far enough to write a log or tell the SCM anything.
+function Test-Deployment {
+    param([string]$Exe, [string]$Dir)
+
+    $internal = Join-Path $Dir "_internal"
+    if (-not (Test-Path $internal)) {
+        Write-Host "ERROR: $internal is missing." -ForegroundColor Red
+        Write-Host "       This is a onedir build - copy the WHOLE nekoproxy-controller folder," -ForegroundColor Yellow
+        Write-Host "       not just the .exe." -ForegroundColor Yellow
+        return $false
+    }
+    if (-not (Get-ChildItem $internal -Filter "python*.dll" -ErrorAction SilentlyContinue)) {
+        Write-Host "ERROR: no python*.dll in $internal - the folder is incomplete." -ForegroundColor Red
+        Write-Host "       Re-copy the whole nekoproxy-controller folder from the build." -ForegroundColor Yellow
+        return $false
+    }
+
+    # Cheapest real proof: make the exe run and report on itself.
+    Push-Location $Dir
+    try { $out = & $Exe selfcheck 2>&1; $code = $LASTEXITCODE } finally { Pop-Location }
+    if ($code -ne 0) {
+        Write-Host "ERROR: the controller exe does not run here (exit $code):" -ForegroundColor Red
+        $out | ForEach-Object { Write-Host "  $_" -ForegroundColor Gray }
+        Write-Host "       Re-copy the whole nekoproxy-controller folder from the build." -ForegroundColor Yellow
+        return $false
+    }
+    return $true
+}
+
 # --- Require elevation ---
 $isAdmin = ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 if (-not $isAdmin) {
@@ -69,8 +103,26 @@ if ($Uninstall) {
             Stop-Service -Name $ServiceName -Force -ErrorAction SilentlyContinue
             Start-Sleep -Seconds 2
         }
+        # Ask the exe to deregister itself, but never trust that it worked: if the
+        # deployment is broken the exe cannot run at all, and reporting success
+        # here leaves the service registered and every later install failing with
+        # "already installed".
         Push-Location $ExeDir
-        try { & $ExePath remove } finally { Pop-Location }
+        try { $out = & $ExePath remove 2>&1; $code = $LASTEXITCODE } finally { Pop-Location }
+        if (Get-Service -Name $ServiceName -ErrorAction SilentlyContinue) {
+            Write-Host "[!] '$ExePath remove' did not remove the service (exit $code):" -ForegroundColor Yellow
+            $out | ForEach-Object { Write-Host "  $_" -ForegroundColor Gray }
+            Write-Host "[*] Falling back to sc.exe delete..." -ForegroundColor Cyan
+            & sc.exe delete $ServiceName | Out-Null
+            Start-Sleep -Seconds 2
+        }
+        if (Get-Service -Name $ServiceName -ErrorAction SilentlyContinue) {
+            Write-Host "ERROR: service '$ServiceName' is still registered." -ForegroundColor Red
+            Write-Host "       Close services.msc / any nekoproxy-controller process and retry," -ForegroundColor Yellow
+            Write-Host "       or remove it manually: sc.exe delete $ServiceName" -ForegroundColor Yellow
+            Write-Host ""
+            exit 1
+        }
         Write-Host "[OK] Service removed. Database and .env were left in place." -ForegroundColor Green
     } else {
         Write-Host "[!] Service not installed." -ForegroundColor Yellow
@@ -78,6 +130,8 @@ if ($Uninstall) {
     Write-Host ""
     exit 0
 }
+
+if (-not (Test-Deployment -Exe $ExePath -Dir $ExeDir)) { exit 1 }
 
 Write-Host ""
 Write-Host "================================================" -ForegroundColor Cyan
@@ -174,10 +228,19 @@ try {
 }
 
 Write-Host ""
+# Report the port the controller will actually listen on: -Port if given,
+# otherwise whatever NEKO_PORT the existing .env carries, otherwise the default.
+$EffectivePort = $Port
+if (-not $EffectivePort -and (Test-Path $configPath)) {
+    $portLine = Select-String -Path $configPath -Pattern '^\s*NEKO_PORT\s*=\s*(\S+)' -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($portLine) { $EffectivePort = $portLine.Matches[0].Groups[1].Value }
+}
+if (-not $EffectivePort) { $EffectivePort = "8001" }
+
 Write-Host "The controller will now start automatically every time the server boots." -ForegroundColor Green
-Write-Host "Web UI (HTTPS, self-signed on first run): https://<server-ip>:$(if ($Port) { $Port } else { '8001' })" -ForegroundColor Green
+Write-Host "Web UI (HTTPS, self-signed on first run): https://<server-ip>:$EffectivePort" -ForegroundColor Green
 Write-Host "If clients are remote, allow the port:" -ForegroundColor Gray
-Write-Host "  New-NetFirewallRule -DisplayName 'NekoProxy Controller' -Direction Inbound -Action Allow -Protocol TCP -LocalPort $(if ($Port) { $Port } else { '8001' })" -ForegroundColor Gray
+Write-Host "  New-NetFirewallRule -DisplayName 'NekoProxy Controller' -Direction Inbound -Action Allow -Protocol TCP -LocalPort $EffectivePort" -ForegroundColor Gray
 Write-Host ""
 Write-Host "Useful commands:" -ForegroundColor Cyan
 Write-Host "  Start-Service $ServiceName" -ForegroundColor Gray
