@@ -1,0 +1,33 @@
+/// @name NekoProxy Test
+/// @version 1.0.0
+/// @description Tests if Misskey outbound traffic is routing through NekoProxy VPS
+/// @author NekoProxy
+/// @aiVersion 0
+
+Plugin:register_post_form_action("🛡 Test NekoProxy", @(note, repost) {
+  let go = Mk:confirm("NekoProxy Proxy Test", "This will make a federation request to mastodon.social to verify your traffic is routing through the NekoProxy VPS.\n\nContinue?")
+  if !go { return }
+
+  // Fetch a remote user — this forces an outbound HTTP request from Misskey's server
+  // through the configured proxy (NekoProxy → VPS agent → internet)
+  let result = Mk:api("users/show", {
+    username: "Mastodon",
+    host: "mastodon.social"
+  })
+
+  if result {
+    let name = result.name
+    let acct = `@{result.username}@mastodon.social`
+    Mk:dialog(
+      "✅ Proxy Routing Active",
+      `Successfully fetched remote user {acct} ({name})\n\nMisskey made a live outbound request through the proxy. Your traffic is exiting via the NekoProxy VPS.\n\nCheck the NekoProxy controller → Agents page to see the VPS agent's connection count.\n\nTo confirm the exit IP:\n  curl -x http://localhost:8080 https://api64.ipify.org`,
+      "success"
+    )
+  } else {
+    Mk:dialog(
+      "❌ Proxy Test Failed",
+      `Could not fetch remote user from mastodon.social.\n\nCheck:\n• Misskey proxy setting in .config/default.yml\n• NekoProxy forward proxy is listening (ss -tnlp | grep 8080)\n• VPS agent is healthy in NekoProxy controller\n• Misskey was restarted after proxy config change`,
+      "error"
+    )
+  }
+})
