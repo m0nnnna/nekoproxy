@@ -298,6 +298,7 @@ async def create_service_htmx(
     backend_host: str = Form(...),
     backend_port: int = Form(...),
     protocol: str = Form("tcp"),
+    proxy_protocol: str = Form(""),
     db: Session = Depends(get_db)
 ):
     """Create service via htmx form."""
@@ -323,7 +324,9 @@ async def create_service_htmx(
         listen_port=listen_port,
         backend_host=backend_host,
         backend_port=backend_port,
-        protocol=Protocol(protocol)
+        protocol=Protocol(protocol),
+        # PROXY protocol is TCP-only; checkbox sends "on" when ticked
+        proxy_protocol=bool(proxy_protocol) and protocol == "tcp"
     )
 
     # Return updated services list
@@ -948,6 +951,7 @@ async def create_rule_htmx(
     backend_port: int = Form(...),
     protocol: str = Form("tcp"),
     agent_id: str = Form(""),
+    proxy_protocol: str = Form(""),
     db: Session = Depends(get_db)
 ):
     """Create service and assignment in one step via htmx form."""
@@ -989,7 +993,9 @@ async def create_rule_htmx(
         listen_port=listen_port,
         backend_host=backend_host,
         backend_port=backend_port,
-        protocol=Protocol(protocol)
+        protocol=Protocol(protocol),
+        # PROXY protocol is TCP-only; checkbox sends "on" when ticked
+        proxy_protocol=bool(proxy_protocol) and protocol == "tcp"
     )
 
     # Create assignment
@@ -1034,6 +1040,27 @@ async def toggle_rule_htmx(request: Request, assignment_id: int, _auth: None = D
             "service": a.service
         })
 
+    return templates.TemplateResponse(request, "partials/rules_table.html", {
+        "request": request,
+        "rules": rules
+    })
+
+
+@router.post("/rules/{assignment_id}/proxy-protocol", response_class=HTMLResponse)
+async def toggle_rule_proxy_protocol_htmx(request: Request, assignment_id: int, _auth: None = Depends(_require_session), db: Session = Depends(get_db)):
+    """Toggle sending a PROXY protocol header (real client IP) to the rule's backend."""
+    assign_repo = ServiceAssignmentRepository(db)
+    service_repo = ServiceRepository(db)
+
+    assignment = assign_repo.get_by_id(assignment_id)
+    if not assignment:
+        raise HTTPException(status_code=404)
+    if assignment.service.protocol != Protocol.TCP:
+        raise HTTPException(status_code=400, detail="PROXY protocol is only supported for TCP rules")
+
+    service_repo.update(assignment.service_id, proxy_protocol=not assignment.service.proxy_protocol)
+
+    rules = [{"assignment": a, "service": a.service} for a in assign_repo.get_all()]
     return templates.TemplateResponse(request, "partials/rules_table.html", {
         "request": request,
         "rules": rules

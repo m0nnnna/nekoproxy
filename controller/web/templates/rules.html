@@ -72,6 +72,16 @@
                 </select>
             </div>
         </div>
+        <div>
+            <label class="inline-flex items-center gap-2 text-sm text-neko-700">
+                <input type="checkbox" name="proxy_protocol" value="on">
+                Forward real client IP (PROXY protocol, TCP only)
+            </label>
+            <p class="text-xs text-neko-400 mt-1">
+                The backend must be set to expect it, e.g. nginx <code>listen 443 ssl proxy_protocol;</code>
+                with <code>set_real_ip_from</code> + <code>real_ip_header proxy_protocol;</code>. Otherwise connections fail.
+            </p>
+        </div>
         <div class="flex justify-between items-end gap-4">
             <div class="flex-1">
                 <label class="neko-label">Description (optional)</label>

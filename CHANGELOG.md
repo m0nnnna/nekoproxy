@@ -6,6 +6,11 @@ All notable changes to NekoProxy are documented here.
 
 ### Added
 
+- **Forward the real client IP to backends (PROXY protocol)**
+  - Per-rule toggle (TCP only): the agent sends a PROXY protocol v1 header to the backend, so nginx/HAProxy/Traefik/Caddy/Postfix see the public client IP instead of the agent's WireGuard IP (e.g. `10.40.40.2`). Off by default because the backend must be configured to expect it.
+  - Rules page: checkbox on create and a clickable **PROXY** badge per TCP rule. API: `proxy_protocol` on services. Agents apply a toggle in place without restarting the listener.
+  - New guide [docs/REAL-CLIENT-IP.md](docs/REAL-CLIENT-IP.md) with nginx (`listen ... proxy_protocol` + `real_ip_header proxy_protocol`) and other backends.
+
 - **Alpine Linux support**
   - `build/Dockerfile.linux.alpine` and `build-docker-alpine.sh` for building musl binaries (Alpine). Ubuntu build remains glibc-only.
   - Linux install/update scripts (`install-controller.sh`, `install-agent.sh`, `update-controller.sh`, `update-agent.sh`) detect systemd vs OpenRC and create the appropriate service (systemd unit or `/etc/init.d/` script) so the same scripts work on Ubuntu/Debian and Alpine.

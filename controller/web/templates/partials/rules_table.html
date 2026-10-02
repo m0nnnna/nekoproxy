@@ -34,6 +34,17 @@
     <td class="whitespace-nowrap">
         {% if rule.service.protocol.value == 'tcp' %}
         <span class="neko-badge neko-badge-low">{{ rule.service.protocol.value.upper() }}</span>
+        <button hx-post="/rules/{{ rule.assignment.id }}/proxy-protocol"
+                hx-target="#rules-table"
+                hx-swap="innerHTML"
+                {% if rule.service.proxy_protocol %}
+                class="neko-badge neko-badge-purple ml-1 cursor-pointer"
+                title="Sending PROXY protocol header (real client IP). The backend must expect it. Click to turn off."
+                {% else %}
+                hx-confirm="Send a PROXY protocol header to {{ rule.service.backend_host }}:{{ rule.service.backend_port }}? The backend must be configured to accept it (e.g. nginx 'listen ... proxy_protocol') or connections will fail."
+                class="neko-badge ml-1 cursor-pointer opacity-50"
+                title="Real client IP is not forwarded. Click to send a PROXY protocol header."
+                {% endif %}>PROXY</button>
         {% else %}
         <span class="neko-badge neko-badge-purple">{{ rule.service.protocol.value.upper() }}</span>
         {% endif %}

@@ -188,7 +188,8 @@ class NekoProxyAgent:
                 "backend_host": s.backend_host,
                 "backend_port": s.backend_port,
                 "service_id": s.id,
-                "service_name": s.name
+                "service_name": s.name,
+                "proxy_protocol": getattr(s, "proxy_protocol", False),
             }
             for s in config.services
         ]

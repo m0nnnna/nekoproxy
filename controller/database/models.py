@@ -43,6 +43,7 @@ class Service(Base):
     backend_host = Column(String(255), nullable=False)  # Backend server
     backend_port = Column(Integer, nullable=False)  # Backend port
     protocol = Column(SQLEnum(Protocol), default=Protocol.TCP)
+    proxy_protocol = Column(Boolean, default=False)  # Send PROXY v1 header with the real client IP
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

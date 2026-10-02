@@ -139,6 +139,14 @@ async def lifespan(app: FastAPI):
             logger.warning("Agents migration (route_via_agent_id): %s", e)
     try:
         with engine.connect() as conn:
+            conn.execute(text("ALTER TABLE services ADD COLUMN proxy_protocol BOOLEAN DEFAULT 0"))
+            conn.commit()
+        logger.info("Services table: added proxy_protocol column")
+    except Exception as e:
+        if "duplicate column name" not in str(e).lower():
+            logger.warning("Services migration (proxy_protocol): %s", e)
+    try:
+        with engine.connect() as conn:
             conn.execute(text("ALTER TABLE global_settings ADD COLUMN forward_proxy_port INTEGER DEFAULT 0"))
             conn.commit()
         logger.info("Global settings: added forward_proxy_port column")

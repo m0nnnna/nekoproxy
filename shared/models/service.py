@@ -12,6 +12,9 @@ class ServiceBase(BaseModel):
     backend_host: str  # Backend server to proxy to
     backend_port: int  # Backend port to proxy to
     protocol: Protocol = Protocol.TCP
+    # Send a PROXY protocol v1 header to the backend so it sees the real client IP (TCP only).
+    # The backend must be configured to expect it, or it will reject the connection.
+    proxy_protocol: bool = False
 
 
 class ServiceCreate(ServiceBase):
@@ -25,6 +28,7 @@ class ServiceUpdate(BaseModel):
     backend_host: Optional[str] = None
     backend_port: Optional[int] = None
     protocol: Optional[Protocol] = None
+    proxy_protocol: Optional[bool] = None
 
 
 class ServiceResponse(ServiceBase):

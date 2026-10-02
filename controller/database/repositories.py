@@ -97,14 +97,16 @@ class ServiceRepository:
         self.db = db
 
     def create(self, name: str, listen_port: int, backend_host: str, backend_port: int,
-               description: Optional[str] = None, protocol: Protocol = Protocol.TCP) -> Service:
+               description: Optional[str] = None, protocol: Protocol = Protocol.TCP,
+               proxy_protocol: bool = False) -> Service:
         service = Service(
             name=name,
             description=description,
             listen_port=listen_port,
             backend_host=backend_host,
             backend_port=backend_port,
-            protocol=protocol
+            protocol=protocol,
+            proxy_protocol=proxy_protocol
         )
         self.db.add(service)
         self.db.commit()

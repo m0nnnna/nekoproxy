@@ -376,6 +376,8 @@ NEKO_SSL_KEYFILE=/path/to/key.pem
 
 See [docs/HTTPS-SETUP.md](docs/HTTPS-SETUP.md) for Nginx reverse proxy setup.
 
+Backends see the agent's WireGuard IP unless a rule has **PROXY protocol** enabled. See [docs/REAL-CLIENT-IP.md](docs/REAL-CLIENT-IP.md) to forward real client IPs to nginx and other backends.
+
 ## Firewall Management and Auto-blocking
 
 The system acts as a **firewall manager**: agents block aggressively and report blocks to the controller; the controller pushes the blocklist to all agents so every node stays in sync.

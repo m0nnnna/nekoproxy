@@ -149,6 +149,7 @@ class AgentManager:
                     backend_host=service.backend_host,
                     backend_port=service.backend_port,
                     protocol=service.protocol,
+                    proxy_protocol=bool(service.proxy_protocol),
                     created_at=service.created_at,
                     updated_at=service.updated_at
                 ))

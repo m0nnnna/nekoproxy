@@ -33,7 +33,8 @@ def create_service(service: ServiceCreate, db: Session = Depends(get_db), _auth:
         listen_port=service.listen_port,
         backend_host=service.backend_host,
         backend_port=service.backend_port,
-        protocol=service.protocol
+        protocol=service.protocol,
+        proxy_protocol=service.proxy_protocol
     )
     return ServiceResponse(
         id=created.id,
@@ -43,6 +44,7 @@ def create_service(service: ServiceCreate, db: Session = Depends(get_db), _auth:
         backend_host=created.backend_host,
         backend_port=created.backend_port,
         protocol=created.protocol,
+        proxy_protocol=bool(created.proxy_protocol),
         created_at=created.created_at,
         updated_at=created.updated_at
     )
@@ -62,6 +64,7 @@ def list_services(db: Session = Depends(get_db), _auth: None = Depends(require_a
             backend_host=s.backend_host,
             backend_port=s.backend_port,
             protocol=s.protocol,
+            proxy_protocol=bool(s.proxy_protocol),
             created_at=s.created_at,
             updated_at=s.updated_at
         )
@@ -84,6 +87,7 @@ def get_service(service_id: int, db: Session = Depends(get_db), _auth: None = De
         backend_host=service.backend_host,
         backend_port=service.backend_port,
         protocol=service.protocol,
+        proxy_protocol=bool(service.proxy_protocol),
         created_at=service.created_at,
         updated_at=service.updated_at
     )
@@ -125,6 +129,7 @@ def update_service(service_id: int, service_update: ServiceUpdate, db: Session =
         backend_host=service.backend_host,
         backend_port=service.backend_port,
         protocol=service.protocol,
+        proxy_protocol=bool(service.proxy_protocol),
         created_at=service.created_at,
         updated_at=service.updated_at
     )

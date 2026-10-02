@@ -3,6 +3,7 @@ Supports optional HTTP scraper detection (User-Agent) for aggressive firewall-st
 """
 
 import asyncio
+import ipaddress
 import logging
 import time
 from typing import Optional, Callable, Set, Dict, List, Awaitable, Any
@@ -31,6 +32,27 @@ DEFAULT_SCRAPER_UA_PATTERNS = [
     "CCBot",
     "cohere-ai",
 ]
+
+
+def build_proxy_protocol_v1(client_addr: tuple, local_addr: tuple) -> bytes:
+    """Build a PROXY protocol v1 header so the backend sees the real client address.
+
+    Without it the backend only ever sees this agent's own address (e.g. its WireGuard IP),
+    because the agent opens a fresh connection to the backend. nginx, HAProxy, Traefik,
+    Caddy and Postfix can all read v1. A dual-stack listener reports IPv4 clients as
+    ::ffff:a.b.c.d — those go out as TCP4, the form backends' real-IP rules match against.
+    """
+    src = ipaddress.ip_address(client_addr[0].split("%", 1)[0])
+    dst = ipaddress.ip_address(local_addr[0].split("%", 1)[0])
+    if src.version == 6 and src.ipv4_mapped:
+        src = src.ipv4_mapped
+    if dst.version == 6 and dst.ipv4_mapped:
+        dst = dst.ipv4_mapped
+    if src.version != dst.version:
+        # The header carries one family for both ends; the source is what backends want.
+        dst = ipaddress.ip_address("0.0.0.0" if src.version == 4 else "::")
+    family = "TCP4" if src.version == 4 else "TCP6"
+    return f"PROXY {family} {src} {dst} {client_addr[1]} {local_addr[1]}\r\n".encode("ascii")
 
 
 @dataclass
@@ -71,6 +93,7 @@ class TCPProxy:
         geo_countries: Optional[List[str]] = None,
         geo_lookup: Optional[Any] = None,
         idle_timeout_seconds: int = 0,
+        proxy_protocol: bool = False,
     ):
         self.listen_port = listen_port
         self.backend_host = backend_host
@@ -87,6 +110,7 @@ class TCPProxy:
         self.geo_countries = set((geo_countries or []))
         self.geo_lookup = geo_lookup
         self.idle_timeout_seconds = idle_timeout_seconds or 0
+        self.proxy_protocol = bool(proxy_protocol)
 
         self._server: Optional[asyncio.Server] = None
         self._active_connections: Dict[str, ConnectionStats] = {}
@@ -153,7 +177,8 @@ class TCPProxy:
     ):
         """Handle a new client connection."""
         client_addr = writer.get_extra_info('peername')
-        client_ip, client_port = client_addr
+        # IPv6 peernames are 4-tuples (host, port, flowinfo, scope_id)
+        client_ip, client_port = client_addr[0], client_addr[1]
 
         # Create connection ID and stats
         conn_id = f"{client_ip}:{client_port}"
@@ -250,6 +275,12 @@ class TCPProxy:
                 backend_reader, backend_writer = await asyncio.wait_for(
                     asyncio.open_connection(self.backend_host, self.backend_port),
                     timeout=settings.connection_timeout,
+                )
+
+            # PROXY protocol header must be the very first bytes the backend sees
+            if self.proxy_protocol:
+                backend_writer.write(
+                    build_proxy_protocol_v1(client_addr, writer.get_extra_info('sockname'))
                 )
 
             # If we peeked a chunk, send it first
@@ -362,6 +393,10 @@ class TCPProxy:
         """Update idle connection timeout; 0 = disabled."""
         self.idle_timeout_seconds = max(0, int(seconds))
 
+    def set_proxy_protocol(self, enabled: bool) -> None:
+        """Toggle sending a PROXY protocol header; applies to new connections."""
+        self.proxy_protocol = bool(enabled)
+
 
 class TCPProxyManager:
     """Manages multiple TCP proxy instances."""
@@ -425,7 +460,8 @@ class TCPProxyManager:
         backend_host: str,
         backend_port: int,
         service_id: int,
-        service_name: str = "unknown"
+        service_name: str = "unknown",
+        proxy_protocol: bool = False,
     ):
         """Add and start a new TCP proxy."""
         if listen_port in self._proxies:
@@ -448,6 +484,7 @@ class TCPProxyManager:
             geo_countries=self._geo_countries,
             geo_lookup=self._geo_lookup,
             idle_timeout_seconds=self._idle_timeout_seconds,
+            proxy_protocol=proxy_protocol,
         )
 
         self._proxies[listen_port] = proxy
@@ -496,8 +533,15 @@ class TCPProxyManager:
                     backend_host=rule['backend_host'],
                     backend_port=rule['backend_port'],
                     service_id=rule['service_id'],
-                    service_name=rule.get('service_name', 'unknown')
+                    service_name=rule.get('service_name', 'unknown'),
+                    proxy_protocol=rule.get('proxy_protocol', False),
                 )
+            else:
+                proxy = self._proxies[port]
+                enabled = bool(rule.get('proxy_protocol', False))
+                if proxy.proxy_protocol != enabled:
+                    logger.info(f"PROXY protocol {'enabled' if enabled else 'disabled'} for port {port}")
+                    proxy.set_proxy_protocol(enabled)
 
     async def stop_all(self):
         """Stop all proxies."""
