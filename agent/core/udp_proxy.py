@@ -297,8 +297,10 @@ class UDPProxy:
                 geo_countries=self.geo_countries,
                 geo_lookup=self.geo_lookup,
             ),
+            # No reuse_address: Python 3.11 removed it for datagram endpoints (passing it raises —
+            # ValueError on 3.11-3.13, TypeError from 3.14), and a UDP port is free to bind again as soon as its socket closes —
+            # there's no TIME_WAIT to get past, which is all it was for with TCP.
             local_addr=(self._listen_ip, self.listen_port),
-            reuse_address=True,
         )
 
     async def stop(self):
@@ -389,11 +391,13 @@ class UDPProxyManager:
             client_timeout=client_timeout,
         )
 
+        # Any failure, not just a bind error: this runs inside a config sync, and an exception
+        # escaping it rejects the whole config — every other port and the firewall rules too.
         try:
             await proxy.start()
-        except OSError as e:
+        except Exception as e:
             logger.error(
-                "UDP proxy on port %d failed to bind: %s — skipping this port",
+                "UDP proxy on port %d failed to start: %s — skipping this port",
                 listen_port, e,
             )
             return
